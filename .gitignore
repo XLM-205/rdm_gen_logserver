@@ -1,0 +1,8 @@
+# Default ignored files
+# Ignoring 'server_services' because it doesn't have a use for now
+/shelf/
+/workspace.xml
+/.idea
+/server/templates/tester.html
+/server/server_services.py
+/private_resources/

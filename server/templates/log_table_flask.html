@@ -1,0 +1,191 @@
+<!doctype html>
+<html>
+	<head>
+		<link rel="stylesheet" href="../static/table_style.css">
+	</head>
+	<header>
+	</header>
+	<body onload="loaded()">
+		<div id="navbar">
+			{% if data["count"] == data["total"]%}
+				<!--suppress XmlDuplicatedId -->
+				<p class="active" id="entry_counter">Total Entries: {{ data["count"] }}</p>
+			{% else %}
+				<!--suppress XmlDuplicatedId -->
+				<p class="active" id="entry_counter">Total Entries: {{ data["count"] }} / {{ data["total"] }}</p>
+			{% endif %}
+			{% if data["page"] > 1%}
+				<a class="common_nav" href="?p=1&epp={{data['epp']}}&f={{data['filter']}}&ftgt={{data['filter_target']}}"><<</a>
+				<a class="common_nav" href="?p={{data['page']-1}}&epp={{data['epp']}}&f={{data['filter']}}&ftgt={{data['filter_target']}}"><</a>
+			{% else %}
+				<p class="disabled_nav"><<</p>
+				<p class="disabled_nav"><</p>
+			{% endif %}
+			<p class="common_nav">Page {{ data["page"] }} / {{ data["page_max"] }}</p>
+			{% if data["page"] < data["page_max"] %}
+				<a class="common_nav" href="?p={{data['page']+1}}&epp={{data['epp']}}&f={{data['filter']}}&ftgt={{data['filter_target']}}">></a>
+				<a class="common_nav" href="?p={{data['page_max']}}&epp={{data['epp']}}&f={{data['filter']}}&ftgt={{data['filter_target']}}">>></a>
+			{% else %}
+				<p class="disabled_nav">></p>
+				<p class="disabled_nav">>></p>
+			{% endif %}
+			<div class="nav_dropdown">
+				<button class="dropbtn">{{ data["epp"] }} Entries per Page</button>
+				<div class="drop-content">
+					<a href="?p={{ data['page'] }}&epp=10&f={{data['filter']}}&ftgt={{data['filter_target']}}">10 Entries</a>
+					<a href="?p={{ data['page'] }}&epp=20&f={{data['filter']}}&ftgt={{data['filter_target']}}">20 Entries</a>
+					<a href="?p={{ data['page'] }}&epp=50&f={{data['filter']}}&ftgt={{data['filter_target']}}">50 Entries</a>
+				</div>
+			</div>
+			{% if '/old' in request.url_rule.rule %}
+				<a class="common_nav" href="../log">Oldest First</a>
+			{% elif 'log' in request.url_rule.rule %}
+				<a class="common_nav" href="log/old">Newest First</a>
+			{% endif %}
+			<div class="nav_dropdown"> <!-- Service tabs goes here-->
+				<button class="dropbtn" id="filter_severity_bttn">Severities</button>
+				<div class="drop-content">
+					<a href="?p={{data['page']}}&epp={{data['epp']}}&f=off">Filter Off</a>
+					{% for sev in data["severities"] %}
+						<a href="?p={{data['page']}}&epp={{data['epp']}}&f=severity&ftgt={{sev}}">{{ sev }}</a>
+					{% endfor %}
+				</div>
+			</div>
+			<div class="nav_dropdown"> <!-- Service tabs goes here-->
+				<button class="dropbtn" id="filter_servers_bttn">Servers</button>
+				<div class="drop-content">
+					<a href="?p={{data['page']}}&epp={{data['epp']}}&f=off">Filter Off</a>
+					{% for svr in data["servers"] %}
+						<a href="?p={{data['page']}}&epp={{data['epp']}}&f=from&ftgt={{svr}}">{{ svr }}</a>
+					{% endfor %}
+				</div>
+			</div>
+			<a class="common_nav" id="auto_update_bttn" onclick="toggle_auto()">Manual Update</a>
+			<a class="right_nav" id="logout-btn" href="/logout">Logout</a>
+			<p class="right_nav" id="server-clock">Last Update: {{ data["last_update"] }}</p>
+			<a class="right_nav" id="update_btn" href="?p={{ data['page'] }}&epp={{ data['epp'] }}&f={{data['filter']}}&ftgt={{data['filter_target']}}">Update</a>
+		</div>
+		<div id="log_info_table">
+			<table class="table_data" style="border-collapse: collapse; text-align: right; width: 100%; text-align: right;" border="1">
+				<tbody>
+					{% for entry in data["entries"] %}
+						<tr>
+							<th class="entry_id" style="width: 100%; text-align: center;" colspan="2" scope="colgroup">Entry ID {{ entry["id"] }}</th>
+						</tr>
+						<tr>
+							<th class="sev_header" style="width: 10%; text-align: right;{{ entry['flavor']['severity'] }}" scope="row">Severity</th>
+							<td class="sev_body" style="width: 100%; text-align: left;{{ entry['flavor']['severity'] }}">{{ entry['severity'] }}</td>
+						</tr>
+						<tr>
+							<th style="width: 10%; text-align: right;" scope="row">From</th>
+							<td class="usr_body" style="width: 100%; text-align: left;{{ entry['flavor']['user_shade'] }}">{{ entry['from'] }}</td>
+						</tr>
+						<tr>
+							<th style="width: 10%; text-align: right;" scope="row">Comment</th>
+							<td style="width: 100%; text-align: left;">{{ entry["comment"] }}</td>
+						</tr>
+						<tr>
+							<th style="width: 10%; text-align: right;" scope="row">Timestamp</th>
+							<td style="width: 100%; text-align: left;">{{ entry["timestamp"] }}</td>
+						</tr>
+						<tr>
+							<th style="width: 10%; text-align: center;" scope="row">Details</th>
+							<td style="width: 100%; text-align: left;">
+								<pre id="json" style="white-space: pre-line; new-line: keep-all;">
+									<code>{{ entry["body"] }}</code>
+								</pre>
+							</td>
+						</tr>
+					{% endfor %}
+				</tbody>
+			</table>
+		</div>
+	</body>
+	<script>
+			window.onscroll = function() {scrollFunction()};
+
+			var navbar = document.getElementById("navbar");
+			var sticky = navbar.offsetTop;
+
+			var auto_update = false;
+
+			function loaded() {
+				if(window.localStorage.getItem("auto_update") != null) {
+					auto_update = (window.localStorage.getItem("auto_update") == "t" ? true : false);
+				}
+				if (auto_update) {
+					document.getElementById("auto_update_bttn").className = "update_auto";
+					document.getElementById("auto_update_bttn").innerHTML = "Auto Update";
+				}
+				if ("{{data["filter"]}}" == "severity") {
+					document.getElementById("filter_severity_bttn").className = "filter_active";
+				}
+				else if ("{{data["filter"]}}" == "from") {
+					document.getElementById("filter_servers_bttn").className = "filter_active";
+				}
+				setTimeout(fetcher, 3000);
+			}
+
+			function toggle_auto() {
+				auto_update = !auto_update;
+				if (auto_update) {
+					document.getElementById("auto_update_bttn").className = "update_auto";
+					document.getElementById("auto_update_bttn").innerHTML = "Auto Update";
+				}
+				else {
+					document.getElementById("auto_update_bttn").className = "common_nav";
+					document.getElementById("auto_update_bttn").innerHTML = "Manual Update";
+				}
+				window.localStorage.setItem("auto_update", (auto_update ? "t" : "f"));
+			}
+
+			function refresh() {
+				window.location.reload(true);
+				document.location.href ="?p=" + {{ data["page"] }} + "&epp=" + {{ data["epp"] }} +
+										"&f=" + "{{data['filter']}}" + "&ftgt=" + "{{data['filter_target']}}";
+			}
+
+			function fetcher() {
+				fetch('/server/status').then(
+					function (response) {
+						return response.json();
+					}).then(function (json) {
+						var dif = json["entry_count"] - {{ data["total"] }};
+						var isFiltered = {{ data["count"] }} != {{ data["total"] }};
+						if(dif != 0) {
+							if (auto_update) {
+								refresh();
+							}
+							else {
+								document.getElementById("update_btn").className = "update_me";
+								document.title = '* New Entry';
+								if (dif > 0) {
+									if (isFiltered) {
+										document.getElementById("entry_counter").innerHTML = "Total Entries: {{ data["count"] }} / {{ data["total"] }} (+" + dif + ")";
+									}
+									else {
+										document.getElementById("entry_counter").innerHTML = "Total Entries: {{ data["count"] }} (+" + dif + ")";
+									}
+								}
+							}
+						}
+					setTimeout(fetcher, 3000);
+				});
+			}
+
+			function scrollFunction()
+			{
+			  if (window.pageYOffset > sticky)
+			  {
+				navbar.classList.add("sticky");
+			  }
+			  else
+			  {
+				navbar.classList.remove("sticky");
+			  }
+			}
+		</script>
+	<footer>
+
+	</footer>
+</html>
