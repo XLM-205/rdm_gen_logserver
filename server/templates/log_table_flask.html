@@ -42,7 +42,7 @@
 			{% elif 'log' in request.url_rule.rule %}
 				<a class="common_nav" href="log/old">Newest First</a>
 			{% endif %}
-			<div class="nav_dropdown"> <!-- Service tabs goes here-->
+			<div class="nav_dropdown"> <!-- Severities Filter-->
 				<button class="dropbtn" id="filter_severity_bttn">Severities</button>
 				<div class="drop-content">
 					<a href="?p={{data['page']}}&epp={{data['epp']}}&f=off">Filter Off</a>
@@ -51,17 +51,21 @@
 					{% endfor %}
 				</div>
 			</div>
-			<div class="nav_dropdown"> <!-- Service tabs goes here-->
-				<button class="dropbtn" id="filter_servers_bttn">Servers</button>
-				<div class="drop-content">
-					<a href="?p={{data['page']}}&epp={{data['epp']}}&f=off">Filter Off</a>
-					{% for svr in data["servers"] %}
-						<a href="?p={{data['page']}}&epp={{data['epp']}}&f=from&ftgt={{svr}}">{{ svr }}</a>
-					{% endfor %}
+			{% if data["public"] == true %}
+				<div class="nav_dropdown"> <!-- Servers Filter-->
+					<button class="dropbtn" id="filter_servers_bttn">Servers</button>
+					<div class="drop-content">
+						<a href="?p={{data['page']}}&epp={{data['epp']}}&f=off">Filter Off</a>
+						{% for svr in data["servers"] %}
+							<a href="?p={{data['page']}}&epp={{data['epp']}}&f=from&ftgt={{svr}}">{{ svr }}</a>
+						{% endfor %}
+					</div>
 				</div>
-			</div>
+			{% endif %}
 			<a class="common_nav" id="auto_update_bttn" onclick="toggle_auto()">Manual Update</a>
-			<a class="right_nav" id="logout-btn" href="/logout">Logout</a>
+			{% if data["login"] == true%}
+				<a class="right_nav" id="logout-btn" href="/logout">Logout</a>
+			{% endif %}
 			<p class="right_nav" id="server-clock">Last Update: {{ data["last_update"] }}</p>
 			<a class="right_nav" id="update_btn" href="?p={{ data['page'] }}&epp={{ data['epp'] }}&f={{data['filter']}}&ftgt={{data['filter_target']}}">Update</a>
 		</div>

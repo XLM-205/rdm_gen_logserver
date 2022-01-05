@@ -48,11 +48,21 @@ class Users(UserMixin, db.Model):
 
 # Methods --------------------------------------------------------------------------------------------------------------
 def add_known_list(url, fore_color, backcolor, name):
+    """
+    Add an url to the known server's list
+    :param url: The new url (user) to add
+    :param fore_color: The new user's (text) color
+    :param backcolor: The new user's background color
+    :param name: The new user's nickname
+    """
     known_list[url] = (fore_color, backcolor, name)
 
 
 # noinspection PyUnresolvedReferences
 def fetch_db():
+    """
+    Fetches from the database all severities and users. Called only on startup
+    """
     # Fetching Severities classes, since they are atomic
     global severities
     db_sev = {}

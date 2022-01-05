@@ -1,41 +1,70 @@
 from datetime import datetime
 import flask
+import flask_login
 
 from flask import request
 from server_config import defaults, log_config, print_format
 from classes import severities, known_list, add_known_list
 
-filters_available = {"from", "severity"}
 entry_list = []     # All of our entries
 global_id = 0       # Global Entry Identifier
 
 
 def log_count():
+    """Returns the entry list length"""
     return len(entry_list)
 
 
 def log_purge():
+    """Clears the entry list"""
     entry_list.clear()
 
 
-def log_get_filtered(filter_by: str, target: str):
+def log_get(filter_by=None, target=None):
     """ Returns a list of entries based on the filter
-    :param filter_by: 'from', 'severity' will filter by whom sent the entry or the severity of the entry (default 'from')
-    :param target: The value to match against
+    :param filter_by: Will filter by whom sent the entry or the severity of the entry (default to 'off')
+    :param target: The value to match against. if 'log_config["PUBLIC"] is True, target will be the user
+    :returns: A list with only the selected severity, or the server + internal messages or everything if 'off'.
+    If 'target' is invalid, still returns everything, but add an entry regarding the error
     """
-    if filter_by is not None:
-        if filter_by == 'severity':      # Filter by severity
-            return [entry for entry in entry_list if entry.severity.casefold() == target.casefold()]
-        else:                            # Filter by name
-            return [entry for entry in entry_list if (target in entry.log_from)]
-    return []
-
-
-def log_get():
-    return entry_list
+    if filter_by is None:
+        filter_by = "off"
+    server_name = defaults["INTERNAL"]["SERVER_NAME"]
+    if log_config["PUBLIC"] is False and log_config["LOGIN"] is True:
+        user = flask_login.current_user.url
+        if filter_by != "off":
+            if filter_by == 'severity':      # Filter by severity and user + internal
+                return [entry for entry in entry_list if entry.severity.casefold() == target.casefold() and
+                        (entry.log_from == user or entry.log_from == server_name)]
+            elif filter_by == 'from':        # Filter by name, but always include internals
+                return [entry for entry in entry_list if (user in entry.log_from or entry.log_from == server_name)]
+            else:                            # Unknown filter
+                log_internal(severity="Error", comment=f"Filter '{filter_by}' targeting '{target}' is invalid")
+                return [entry for entry in entry_list if (user in entry.log_from or entry.log_from == server_name)]
+        else:
+            return [entry for entry in entry_list if (user in entry.log_from or entry.log_from == server_name)]
+    else:
+        if filter_by.casefold() != "off":
+            if filter_by == 'severity':      # Filter by severity
+                return [entry for entry in entry_list if entry.severity.casefold() == target.casefold()]
+            elif filter_by == 'from':        # Filter by name, but always include internals
+                return [entry for entry in entry_list if (target in entry.log_from or entry.log_from == server_name)]
+            else:                            # Unknown filter
+                log_internal(severity="Error", comment=f"Filter '{filter_by}' targeting '{target}' is invalid")
+                return entry_list
+        else:
+            return entry_list
 
 
 def log_add(s_from="Unknown", severity="Information", comment="Not Specified", body=None, internal=False):
+    """
+    Add an entry log onto the server
+    :param s_from: Who sent the entry. It's recommended that it's the url or name in the database
+    :param severity: How important is this entry, overall. Database may overwrite the defaults
+    :param comment: A brief comment about this entry
+    :param body: A JSON body, but in reality, any string, or object, can be used here
+    :param internal: True if the entry is coming from the server itself. It's not recommended to set it to True
+    """
     global entry_list
     is_new = False
     entry_list.append(LogEntry(s_from, severity, comment, body))
@@ -52,11 +81,13 @@ def log_add(s_from="Unknown", severity="Information", comment="Not Specified", b
 
 
 def log_internal(severity="Information", comment="Not Specified", body=None):
-    log_add(s_from="Internal", severity=severity, comment=comment, body=body, internal=True)
+    """Adds an entry log onto the server, explicitly as being internal"""
+    log_add(s_from=defaults["INTERNAL"]["SERVER_NAME"], severity=severity, comment=comment, body=body, internal=True)
     entry_list[-1].flavor["user_shade"] = defaults["UI"]["ACCENT"]
 
 
 def log_uncaught_exception(exc, body_json):
+    """Adds an entry log onto the server, explicitly as being internal and reporting an unhandled exception"""
     log_internal(severity="Critical", comment=f"Uncaught exception: '{exc}'", body=body_json)
 
 
@@ -90,6 +121,11 @@ class LogEntry:
 
 
 def severity_flavor_keys(severity: str):
+    """
+    Fetches a 'flavor' color that matches the 'severity' described
+    :param severity: A severity to grab it's corresponding colors
+    :return: A 'flavor', which is a css3 style string of color and background-color
+    """
     flavor = ""
     if severity is not None:
         sev = severity.lower()
@@ -104,6 +140,11 @@ def severity_flavor_keys(severity: str):
 
 # If more users want colors, add them here, but NEVER add the "Internal", that should be handled manually!
 def user_shade_flavor_keys(user_shade: str):
+    """
+    Fetches a 'flavor' color that matches the user requested
+    :param user_shade: A user's url (from field) to grab it's corresponding colors
+    :return: A 'flavor', which is a css3 style string of color and background-color
+    """
     flavor = ""
     if user_shade is not None:
         usr = user_shade.lower()
@@ -117,6 +158,11 @@ def user_shade_flavor_keys(user_shade: str):
 
 
 def nickname(url):
+    """
+    Adds a nickname on the user's url (from field) if they are known
+    :param url: The user's url (from field)
+    :return: '( {Nickname / User's name} )'
+    """
     try:
         if url in known_list:
             return "( " + known_list[url][2] + " )"

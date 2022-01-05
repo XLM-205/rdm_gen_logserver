@@ -1,89 +1,18 @@
-import datetime
 import json
 
 import flask
-import sqlalchemy
-from flask_login import login_required, login_user, logout_user
+from flask_login import login_required, logout_user
 from werkzeug.exceptions import BadRequest
-from werkzeug.utils import redirect
-from flask import Blueprint, request, flash, render_template, url_for
 
-from entry_manager import log_count, log_purge, log_add, log_get, log_get_filtered, filters_available
+from flask import Blueprint, request, render_template, url_for, redirect
+
+from server_config import defaults, log_config
+from entry_manager import log_count, log_purge, log_add, log_get
 from paging import prepare_page, serve_page
-from classes import Users
-from server_config import defaults, print_format, log_config
-from utils import injection_guard, InjectionToken
+from security import attempt_login
 
 auth = Blueprint("auth", __name__)
 main = Blueprint("main", __name__)
-
-# Holds all ips that tried to connect "{IP}": [tries: int, locked: bool, lock_until: datetime]
-login_attempts = {}
-
-
-def try_login(log_in, wp):
-    try:
-        injection_guard([log_in, wp])
-        user = Users.authenticate(log_in, wp)
-    except InjectionToken:
-        # Probable SQL Injection attack!
-        # log_critical(f"SQL Injection identified from {flask.request.remote_addr} !", {"log_in": log_in, "wp": wp})
-        flash("Login information had invalid characters")
-        return None
-    except sqlalchemy.exc.ProgrammingError:
-        # Probable SQL Injection attack!
-        # log_critical(f"SQL Injection identified from {flask.request.remote_addr} !", {"log_in": log_in, "wp": wp})
-        flash("Login information had invalid characters")
-        return None
-    except (sqlalchemy.exc.NoSuchColumnError, AttributeError, TypeError):
-        flash("Invalid Login Attempt")
-        return None
-    return user
-
-
-def attempt_login(log_in, wp, ip_addrss, remember=False):
-    # Safeguarding against brute force
-    # 403 -> Known IP
-    if ip_addrss in login_attempts:     # User is known
-        if login_attempts[ip_addrss][1] is False:
-            # User not locked. Attempt login
-            user = try_login(log_in, wp)
-        elif login_attempts[ip_addrss][2] <= datetime.datetime.now():
-            # User is locked, but his lock have expired
-            login_attempts[ip_addrss][0] = 0
-            login_attempts[ip_addrss][1] = False
-            user = try_login(log_in, wp)
-        else:
-            if log_config["VERBOSE"]:
-                print_format(f"[ROUTES] IP {ip_addrss} is still locked until {login_attempts[ip_addrss][2]}",
-                             color=defaults["CC"]["ROUTES"])
-            return redirect("/login"), 403
-    else:   # User is unknown
-        login_attempts[ip_addrss] = [0, False, None]
-        user = try_login(log_in, wp)
-
-    # Attempting login
-    if user is None:
-        login_attempts[ip_addrss][0] += 1
-        if login_attempts[ip_addrss][0] >= defaults["SECURITY"]["LOGIN"]["MAX_TRIES"]:  # Lock user
-            lockout = datetime.datetime.now() + datetime.timedelta(seconds=defaults["SECURITY"]["LOGIN"]["LOCKOUT"])
-            login_attempts[ip_addrss][1] = True
-            login_attempts[ip_addrss][2] = lockout
-            if log_config["VERBOSE"]:
-                print_format(f"[ROUTES] IP {ip_addrss} is locked until {login_attempts[ip_addrss][2]}",
-                             color=defaults["CC"]["ROUTES"])
-        flash("Invalid Login")
-        if log_config["VERBOSE"]:
-            print_format(f"[ROUTES] IP {ip_addrss} failed to login (Attempt {login_attempts[ip_addrss][0]})",
-                         color=defaults["CC"]["ROUTES"])
-        return redirect("login"), 406
-    login_attempts[ip_addrss][0] = 0
-    login_attempts[ip_addrss][1] = False
-    if log_config["VERBOSE"]:
-        print_format(f"[ROUTES] IP {ip_addrss} logged in successfully",
-                     color=defaults["CC"]["ROUTES"])
-    login_user(user, remember=remember)
-    return redirect("/"), 200
 
 
 @main.route('/server/status', methods=["GET"])   # Used to fetch data
@@ -151,28 +80,23 @@ def add_entry():
         return "Bad Entry Ignored", 400
 
 
-@main.route("/")
+@main.route('/')
 @login_required
 def home_page():
-    return redirect("/log")
+    return redirect(url_for("main.show_recent_entries"))
 
 
 @main.route('/log', methods=['GET'])
 @login_required
 def show_recent_entries():
     # handle_log_services() # Disabled on this version
-    out, cur_page, max_page, per_page = prepare_page()
-    try:
-        fltr = request.args.get("f")
-        fltr_tgt = request.args.get("ftgt")
-        if (fltr is not None and fltr in filters_available) and fltr_tgt is not None:
-            rev = log_get_filtered(fltr, fltr_tgt)[::-1]
-        else:
-            rev = log_get()[::-1]
-    except ValueError:
-        rev = log_get()[::-1]
+    filter_type = None if request.args.get("f") == "None" else request.args.get("f")
+    filter_target = None if request.args.get("ftgt") == "None" else request.args.get("ftgt")
+    entries = log_get(filter_type, filter_target)[::-1]
 
-    for entry in rev[(cur_page - 1) * per_page:]:
+    out, cur_page, max_page, per_page = prepare_page(len(entries), filter_type, filter_target)
+
+    for entry in entries[(cur_page - 1) * per_page:]:
         out["entries"].append(entry.json())
         if len(out["entries"]) == per_page:
             break
@@ -183,20 +107,15 @@ def show_recent_entries():
 @login_required
 def show_entries():
     # handle_log_services() # Disabled on this version
-    out, cur_page, max_page, per_page = prepare_page()
-    try:
-        fltr = request.args.get("f")
-        fltr_tgt = request.args.get("ftgt")
-        if (fltr is not None and fltr in filters_available) and fltr_tgt is not None:
-            rev = log_get_filtered(fltr, fltr_tgt)[(cur_page - 1) * per_page:]
-        else:
-            rev = log_get()[(cur_page - 1) * per_page:]
-    except ValueError:
-        rev = log_get()[(cur_page - 1) * per_page:]
+    filter_type = None if request.args.get("f") == "None" else request.args.get("f")
+    filter_target = None if request.args.get("ftgt") == "None" else request.args.get("ftgt")
+    entries = log_get(filter_type, filter_target)
 
-    for entry in rev:
+    out, cur_page, max_page, per_page = prepare_page(len(entries), filter_type, filter_target)
+
+    for entry in entries[(cur_page - 1) * per_page:]:
         out["entries"].append(entry.json())
-        if len(out["entries"]) == per_page:
+        if len(out) == per_page:
             break
     return serve_page(out, 200)
 
@@ -219,66 +138,70 @@ def show_entries():
 @main.route('/info', methods=['GET'])
 def info():
     out = {
-        "note": "Wrong server for that, pal ;)",
-        "componente": "Log Server",
-        "versao": "1.2.0",
-        "descricao": "Provides a public, standardized and easy to use visual log interface",
-        "ponto_de_acesso": "https://sd-log-server.herokuapp.com",
-        "status": "Always up",
-        "identificacao": -1,
-        "lider": 0,
-        "eleicao": "All of them ;)",
-        "sobre": ["Fully coded, back & front by Ramon Darwich de Menezes", "https://github.com/XLM-205",
+        "component": "General Purpose Log Server",
+        "version": defaults["INTERNAL"]["VERSION"],
+        "description": "Provides a public, standardized and easy to use visual log interface",
+        "access_point": defaults["INTERNAL"]["ACCESS_POINT"],
+        "about": ["Fully coded, back & front by Ramon Darwich de Menezes", "https://github.com/XLM-205",
                   "http://lattes.cnpq.br/2510824092604238"],
-        "databases": {
-            "servers": {
-                "known_servers": None,
-                # "secondary_servers": secondary_servers
-            }
-        }
+        # "databases": {
+        #    "servers": {
+        #        "known_servers": None,
+        #        "secondary_servers": secondary_servers
+        #    }
+        # }
     }
     return json.dumps(out), 418
 
 
 @auth.route("/login", methods=["GET"])
 def login():
-    return render_template("login.html")
+    if log_config["LOGIN"] is True:
+        return render_template("login.html")
+    else:
+        return redirect(url_for("main.show_recent_entries"))
 
 
 @auth.route("/login", methods=["POST"])
 def login_post():
-    log_in = request.form.get("log_in")
-    wp = request.form.get("password")
-    remember = True if request.form.get("remember") else False
-    return attempt_login(log_in, wp, flask.request.remote_addr, remember=remember)
+    if log_config["LOGIN"] is True:
+        log_in = request.form.get("log_in")
+        wp = request.form.get("password")
+        remember = True if request.form.get("remember") else False
+        return attempt_login(log_in, wp, flask.request.remote_addr, remember=remember)
+    else:
+        return redirect(url_for("main.show_recent_entries"))
 
 
 @auth.route("/login/cli", methods=["POST"])
 def login_post_cli():
-    try:
-        req = request.json
-        usr = "Unknown"
-        wp = "Unknown"
-        remember = False
-        inputs = 2
+    if log_config["LOGIN"] is True:
         try:
-            usr = req["user"]
-        except KeyError:
+            req = request.json
+            remember = False
+            try:
+                usr = req["user"]
+            except KeyError:
+                return "Bad Login", 400
+            try:
+                wp = req["webpass"]
+            except KeyError:
+                return "Bad Login", 400
+            try:
+                remember = req["remember"]
+            except KeyError:
+                pass    # Just ignore
+            return attempt_login(usr, wp, flask.request.remote_addr, remember)
+        except BadRequest:
             return "Bad Login", 400
-        try:
-            wp = req["webpass"]
-        except KeyError:
-            return "Bad Login", 400
-        try:
-            remember = req["remember"]
-        except KeyError:
-            pass    # Just ignore
-        return attempt_login(usr, wp, flask.request.remote_addr, remember)
-    except BadRequest:
-        return "Bad Login", 400
+    else:
+        return redirect(url_for("main.show_recent_entries"))
 
 
 @auth.route("/logout", methods=["GET"])
 def logout():
-    logout_user()
-    return redirect(url_for("auth.login"))
+    if log_config["LOGIN"] is True:
+        logout_user()
+        return redirect(url_for("auth.login"))
+    else:
+        return redirect(url_for("main.show_recent_entries"))
