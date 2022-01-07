@@ -1,13 +1,12 @@
 import json
-
 import flask
 from flask_login import login_required, logout_user
 from werkzeug.exceptions import BadRequest
-
 from flask import Blueprint, request, render_template, url_for, redirect
 
-from server_config import defaults, log_config
-from entry_manager import log_count, log_purge, log_add, log_get
+from server_config import defaults, logger_config
+from entry_manager import log_count, log_purge, log_add, log_get, log_internal, log_uncaught_exception, \
+                          add_severity, add_known_list
 from paging import prepare_page, serve_page
 from security import attempt_login
 
@@ -51,16 +50,17 @@ def add_entry():
     try:
         req = request.json
         req_severity = "Unknown"
-        req_from = "Unknown"
         req_comm = "Not Specified"
         req_body = {}
-        inputs = 4
-        try:
-            req_severity = req["severity"]
-        except KeyError:
-            inputs -= 1
+        inputs = 3
         try:
             req_from = req["from"]
+            if req_from is None or req_from == "":
+                return "Bad Entry Ignored", 400
+        except KeyError:
+            return "Bad Entry Ignored", 400
+        try:
+            req_severity = req["severity"]
         except KeyError:
             inputs -= 1
         try:
@@ -120,19 +120,34 @@ def show_entries():
     return serve_page(out, 200)
 
 
-# noinspection PyBroadException
-# @main.route('/info', methods=['POST'])
-# def set_info():
-#    global secondary_servers
-#    try:
-#        if "secondary_servers" in request.json:
-#            secondary_servers = request.json["secondary_servers"]
-#    except ValueError:
-#        internal_log(severity="Attention", comment="Invalid value received when setting data", body=request.json)
-#    except TypeError:
-#        internal_log(severity="Error", comment="Request have an invalid type", body=request.json)
-#    except Exception as exc:
-#        log_uncaught_exception(str(exc), request.json)
+@main.route('/set', methods=['POST'])
+def set_info():
+    try:
+        req = request.json
+        key_name = "name"
+        key_color = "color"
+        key_backcolor = "backcolor"
+        key_url = "url"
+        try:
+            req_type = req["type"].lower()
+        except KeyError:
+            return redirect(url_for("main.show_recent_entries"))
+        try:
+            if req_type == "severity":
+                add_severity(req[key_name].lower(), req[key_color], req[key_backcolor], allow_replace=True)
+            elif req_type == "server":
+                add_known_list(req[key_url], req[key_color], req[key_backcolor], req[key_name], allow_replace=True)
+                log_internal(severity="Success", comment=f"Added a new server '{req[key_url]}' ({req[key_name]})")
+        except KeyError:
+            return redirect(url_for("main.show_recent_entries"))
+    except ValueError:
+        log_internal(severity="Attention", comment="Invalid value received when setting data", body=request.json)
+    except TypeError:
+        log_internal(severity="Error", comment="Request have an invalid type", body=request.json)
+    except Exception as exc:
+        log_uncaught_exception(str(exc), request.json)
+    finally:
+        return redirect(url_for("main.show_recent_entries"))
 
 
 @main.route('/info', methods=['GET'])
@@ -156,7 +171,7 @@ def info():
 
 @auth.route("/login", methods=["GET"])
 def login():
-    if log_config["LOGIN"] is True:
+    if logger_config["LOGIN"] is True:
         return render_template("login.html")
     else:
         return redirect(url_for("main.show_recent_entries"))
@@ -164,7 +179,7 @@ def login():
 
 @auth.route("/login", methods=["POST"])
 def login_post():
-    if log_config["LOGIN"] is True:
+    if logger_config["LOGIN"] is True:
         log_in = request.form.get("log_in")
         wp = request.form.get("password")
         remember = True if request.form.get("remember") else False
@@ -175,7 +190,7 @@ def login_post():
 
 @auth.route("/login/cli", methods=["POST"])
 def login_post_cli():
-    if log_config["LOGIN"] is True:
+    if logger_config["LOGIN"] is True:
         try:
             req = request.json
             remember = False
@@ -200,7 +215,7 @@ def login_post_cli():
 
 @auth.route("/logout", methods=["GET"])
 def logout():
-    if log_config["LOGIN"] is True:
+    if logger_config["LOGIN"] is True:
         logout_user()
         return redirect(url_for("auth.login"))
     else:

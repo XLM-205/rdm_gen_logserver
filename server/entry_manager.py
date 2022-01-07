@@ -1,13 +1,17 @@
-from datetime import datetime
 import flask
 import flask_login
-
 from flask import request
-from server_config import defaults, log_config, print_format
-from classes import severities, known_list, add_known_list
+from datetime import datetime
+
+from console_printers import print_verbose
+from server_config import defaults, logger_config
 
 entry_list = []     # All of our entries
 global_id = 0       # Global Entry Identifier
+# Severities classes (FG Color, BG Color). The key is the severity
+severities = defaults["SEVERITIES"]            # Severity name, color and backcolor
+known_list = defaults["SERVERS"]               # User list with proper name, color, backcolor and expected URL
+db_entries = []                                # DB Fetched past entries
 
 
 def log_count():
@@ -30,7 +34,7 @@ def log_get(filter_by=None, target=None):
     if filter_by is None:
         filter_by = "off"
     server_name = defaults["INTERNAL"]["SERVER_NAME"]
-    if log_config["PUBLIC"] is False and log_config["LOGIN"] is True:
+    if logger_config["PUBLIC"] is False and logger_config["LOGIN"] is True:
         user = flask_login.current_user.url
         if filter_by != "off":
             if filter_by == 'severity':      # Filter by severity and user + internal
@@ -56,34 +60,29 @@ def log_get(filter_by=None, target=None):
             return entry_list
 
 
-def log_add(s_from="Unknown", severity="Information", comment="Not Specified", body=None, internal=False):
+def log_add(s_from="Unknown", severity="Information", comment="Not Specified", body=None):
     """
     Add an entry log onto the server
     :param s_from: Who sent the entry. It's recommended that it's the url or name in the database
     :param severity: How important is this entry, overall. Database may overwrite the defaults
     :param comment: A brief comment about this entry
     :param body: A JSON body, but in reality, any string, or object, can be used here
-    :param internal: True if the entry is coming from the server itself. It's not recommended to set it to True
     """
     global entry_list
-    is_new = False
+    if s_from != defaults["INTERNAL"]["SERVER_NAME"] and s_from not in known_list:
+        ip = flask.request.remote_addr
+        if add_known_list(s_from, None, None, ip) is True:  # New server, but unknown one
+            log_internal(severity="Warning", comment=f"Server {known_list[s_from][2]} from '{s_from}' was set",
+                         body={s_from: known_list[s_from]})
+            print_verbose(sender=__name__,
+                          message=f"Server {known_list[s_from][2]} from '{s_from}' was set")
     entry_list.append(LogEntry(s_from, severity, comment, body))
-    if s_from not in known_list and internal is False:    # New server, but unknown one. Add it temporarily
-        add_known_list(s_from, None, None, f"{flask.request.remote_addr}")
-        log_internal(severity="Warning", comment=f"New server '{s_from}' ({known_list[s_from][2]}) added")
-        is_new = True
-    if log_config["VERBOSE"]:
-        print_format(f"[ENTRY MANAGER] Added (from:'{s_from}', '{severity}', '{comment}', body:{body})",
-                     color=defaults["CC"]["ENTRY_MANAGER"])
-        if is_new:
-            print_format(f"[ENTRY MANAGER] Added new server '{s_from}' ({known_list[s_from][2]})",
-                         color=defaults["CC"]["ENTRY_MANAGER"])
 
 
 def log_internal(severity="Information", comment="Not Specified", body=None):
     """Adds an entry log onto the server, explicitly as being internal"""
-    log_add(s_from=defaults["INTERNAL"]["SERVER_NAME"], severity=severity, comment=comment, body=body, internal=True)
-    entry_list[-1].flavor["user_shade"] = defaults["UI"]["ACCENT"]
+    log_add(s_from=defaults["INTERNAL"]["SERVER_NAME"], severity=severity, comment=comment, body=body)
+    entry_list[-1].is_internal = True
 
 
 def log_uncaught_exception(exc, body_json):
@@ -91,31 +90,79 @@ def log_uncaught_exception(exc, body_json):
     log_internal(severity="Critical", comment=f"Uncaught exception: '{exc}'", body=body_json)
 
 
+def add_severity(severity_name: str, color, backcolor, allow_replace=False):
+    """
+    Add a new severity to the list of severities.
+    :param severity_name: The name of the severity, always lowercase (enforced)
+    :param color: Text color in the format '#RRGGBB'
+    :param backcolor: Background color in the format '#RRGGBB'
+    :param allow_replace: If True, if 'severity_name' matches, will replace the old entry with this one (default False)
+    :returns: True if the severity was added (new) and False if it didn't
+    """
+    global severities
+    if severity_name is not None and (severity_name.lower() not in severities or allow_replace is True):
+        severities[severity_name] = (color, backcolor)
+        change_type = "Added new"
+        if allow_replace:
+            change_type = "Set"
+        log_internal(severity="Success", comment=f"{change_type} severity class",
+                     body={severity_name: severities[severity_name]})
+        print_verbose(sender=__name__, message=f"{change_type} severity class '{severity_name}'")
+        return True
+    else:
+        return False
+
+
+def add_known_list(url: str, color, backcolor, name: str, allow_replace=False):
+    """
+    Add an url to the known server's list
+    :param url: The new url (user) to add
+    :param color: The new user's (text) color
+    :param backcolor: The new user's background color
+    :param name: The new user's nickname
+    :param allow_replace: If True, if 'url' matches, will replace the old entry with this one (default False)
+    :returns: True if the server was added (new) and False if it didn't
+    """
+    global known_list
+    if url is not None and (url not in known_list or allow_replace):  # New server, but unknown one. Add it temporarily
+        known_list[url] = (color, backcolor, name)
+        change_type = "Added new"
+        if allow_replace:
+            change_type = "Set"
+        # log_internal(severity="Success", comment=f"{change_type} server", body={url: known_list[url]})
+        print_verbose(sender=__name__, message=f"{change_type} server '{url}'")
+        return True
+    else:
+        return False
+
+
 class LogEntry:
     def __init__(self, s_from="Unknown", severity="Information", comm="Not Specified", body=None):
         global global_id
         self.msg_id = global_id
-        self.log_from = s_from + nickname(s_from)
+        self.log_from = s_from
+        self.nickname = nickname(s_from)
         self.severity = severity
         self.comment = comm
         self.timestamp = datetime.now().strftime("%H:%M:%S.%f - %d/%m/%Y")
         self.body = body
-        self.flavor = {  # Cosmetic hints
-            "severity": severity_flavor_keys(severity),
-            "user_shade": user_shade_flavor_keys(s_from)
-        }
+        self.is_internal = False    # Only true if the entry was sent BY THE SERVER. Don't manually change this
         global_id += 1
 
     # Returns the whole entry as a JSON object to be used when rendering the page
     def json(self):
+        full_name = self.log_from + (self.nickname if self.nickname is not None else "")
         out = {
             "id": self.msg_id,
-            "from": self.log_from,
+            "from": full_name,
             "severity": self.severity,
             "comment": self.comment,
             "timestamp": self.timestamp,
             "body": self.body,
-            "flavor": self.flavor
+            # Cosmetic hints
+            "flavor": {"severity": severity_flavor_keys(self.severity),
+                       "user_shade": user_shade_flavor_keys(self.log_from) if
+                       self.is_internal is False else defaults["INTERFACE"]["PAGE"]["ACCENT"]}
         }
         return out
 
@@ -147,7 +194,7 @@ def user_shade_flavor_keys(user_shade: str):
     """
     flavor = ""
     if user_shade is not None:
-        usr = user_shade.lower()
+        usr = user_shade
         if usr in known_list:
             colors = known_list[usr]
             if colors[0] is not None:
@@ -165,9 +212,9 @@ def nickname(url):
     """
     try:
         if url in known_list:
-            return "( " + known_list[url][2] + " )"
+            return " (" + known_list[url][2] + ")"
     except KeyError:
         log_internal(severity="Error", comment="Known server list's 'url' key is missing!")
     except Exception as exc:
         log_uncaught_exception(str(exc), request.json)
-    return ""
+    return None

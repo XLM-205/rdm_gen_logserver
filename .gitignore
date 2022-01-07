@@ -5,4 +5,4 @@
 /.idea
 /server/templates/tester.html
 /server/server_services.py
-/private_resources/
+/private_resources/conf_res.py

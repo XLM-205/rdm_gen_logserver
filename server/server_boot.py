@@ -4,9 +4,10 @@ from flask_login import LoginManager
 from flask_sslify import SSLify
 from flask import Flask
 
-from classes import fetch_db, db, Users, known_list
-from server_config import log_config, print_format, defaults, private_info_fill
-from entry_manager import log_uncaught_exception, log_internal
+from db_models import fetch_db, db, Users
+from console_printers import print_verbose
+from server_config import logger_config, defaults
+from entry_manager import known_list, log_uncaught_exception, log_internal
 
 
 def server_init(is_pre_init: bool):
@@ -15,13 +16,14 @@ def server_init(is_pre_init: bool):
 
     :param is_pre_init: If True, then we're executing the pre initialization. If False, then it's post
     """
-    init_set = log_config["PRE_INIT"] if is_pre_init else log_config["POST_INIT"]
+    init_set = logger_config["PRE_INIT"] if is_pre_init else logger_config["POST_INIT"]
     order = "Pre" if is_pre_init else "Post"
-    if log_config["VERBOSE"]:
-        print_format(f"[SERVER BOOT] {order} Initialization starting...", color=defaults["CC"]["SERVER_BOOT"])
-        if not init_set:
-            print_format(f"[SERVER BOOT] {order} Initialization skipped (No task)", color=defaults["CC"]["SERVER_BOOT"])
-            return
+    print_verbose(sender=__name__,
+                  message=f"{order} Initialization starting...")
+    if not init_set:
+        print_verbose(sender=__name__,
+                      message=f"{order} Initialization skipped (No task)")
+        return
     for func in init_set:
         try:
             if func is None:
@@ -42,10 +44,10 @@ def server_init(is_pre_init: bool):
                          comment=f"Error during {order} Initialization of {func[0]}({func[1]})")
         except Exception as exc:
             log_uncaught_exception(str(exc), func)
-    if log_config["CLEAR_INIT"]:
+    if logger_config["CLEAR_INIT"]:
         init_set.clear()
-    if log_config["VERBOSE"]:
-        print_format(f"[SERVER BOOT] {order} Initialization complete", color=defaults["CC"]["SERVER_BOOT"])
+    print_verbose(sender=__name__,
+                  message=f"{order} Initialization complete")
 
 
 def create_app():
@@ -53,7 +55,7 @@ def create_app():
     app = Flask(__name__)
     # Pre initialization phase
     with app.app_context():
-        if log_config["LOAD_PRIVATE"]:
+        if logger_config["LOAD_PRIVATE"]:
             private_info_fill()
         server_init(is_pre_init=True)
 
@@ -70,7 +72,7 @@ def create_app():
             db_uri = defaults["FALLBACK"]["DB_URL"]
         # app.debug = True
         # app.config["DEBUG"] = True  # If local, allow debug
-        log_config["POST_INIT"].append((log_internal, ("Attention", "Log Server running on DEBUG mode")))
+        logger_config["POST_INIT"].append((log_internal, ("Attention", "Log Server running on DEBUG mode")))
     app.config["SECRET_KEY"] = os.environ.get("SKEY", os.urandom(32).hex())  # For encrypting passwords during execution
     app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -79,7 +81,7 @@ def create_app():
     app.register_blueprint(routes.main)
 
     with app.app_context():
-        if db_uri is not None and db_uri != "":
+        if db_uri is not None and db_uri != "" and logger_config["USE_DB"] is True:
             db.init_app(app)
             login_manager = LoginManager()
             login_manager.login_view = 'auth.login'
@@ -90,25 +92,60 @@ def create_app():
                 return Users.query.get(int(user_id))
             fetch_db()
         else:
-            log_config["POST_INIT"].append((log_internal, ("Attention", "Log Server running WITHOUT Database support")))
-            log_config["LOGIN"] = False     # If we don't have a database, we can't login
+            db_msg = "Log Server running WITHOUT Database support"
+            print_verbose(sender=__name__,
+                          message=db_msg)
+            logger_config["POST_INIT"].append((log_internal, ("Attention", db_msg)))
+            logger_config["LOGIN"] = False     # If we don't have a database, we can't login
 
         # Final checks and warnings
-        if log_config["LOGIN"] is False:
+        if logger_config["LOGIN"] is False:
             login_mode_msg = "Log Server DON'T REQUIRE Login"
             app.config["LOGIN_DISABLED"] = True
-            if log_config["VERBOSE"]:
-                print_format(f"[SERVER BOOT] {login_mode_msg}", color=defaults["CC"]["SERVER_BOOT"])
-            log_config["POST_INIT"].append((log_internal, ("Warning", login_mode_msg)))
+            print_verbose(sender=__name__,
+                          message=login_mode_msg)
+            logger_config["POST_INIT"].append((log_internal, ("Warning", login_mode_msg)))
 
-        if log_config["PUBLIC"] is True:
+        if logger_config["PUBLIC"] is True:
             public_mode_msg = "Log Server IS Public"
-            if log_config["VERBOSE"]:
-                print_format(f"[SERVER BOOT] {public_mode_msg}", color=defaults["CC"]["SERVER_BOOT"])
-            log_config["POST_INIT"].append((log_internal, ("Warning", public_mode_msg)))
+            print_verbose(sender=__name__,
+                          message=public_mode_msg)
+            logger_config["POST_INIT"].append((log_internal, ("Warning", public_mode_msg)))
 
-        log_config["POST_INIT"].append((log_internal, ("Success", "Log Server Started successfully")))
+        logger_config["POST_INIT"].append((log_internal, ("Success", "Log Server Started successfully")))
         server_init(is_pre_init=False)
         known_list["LogServer"] = defaults["INTERNAL"]["SERVER_NAME"]   # Add the server as an filter option
 
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", defaults["FALLBACK"]["PORT"])), use_reloader=False)
+
+
+def private_info_fill():
+    """If you have sensitive data, insert it here. Should reference files ignored by your VCS and local to the deploy.
+       \nThis method is custom tailored for each use case and invoking and using it is OPTIONAL."""
+    from os import path
+    import importlib
+    try:
+        print_verbose(sender=__name__,
+                      message=f"Loading private resources...",
+                      underline=True)
+        confidential_path = "private_resources/conf_res"
+        import_path = confidential_path.replace("/", ".")   # Since the importlib uses '.' instead of '/'
+        # Grabbing a local DB url
+        if path.exists(confidential_path + ".py"):
+            conf_res = importlib.import_module(import_path)
+            defaults["FALLBACK"]["DB_URL"] = conf_res.local_db_url
+            print_verbose(sender=__name__,
+                          message=f"Local Database url set to '{defaults['FALLBACK']['DB_URL']}",
+                          underline=True)
+        else:
+            print_verbose(sender=__name__,
+                          message=f"'{import_path}' module was not found. Loading aborted",
+                          underline=True)
+    except Exception as ecp:
+        print_verbose(sender=__name__,
+                      message=f"Failed to fetch private resources, {str(ecp)}",
+                      underline=True)
+        return
+    print_verbose(sender=__name__,
+                  message="Private resources loaded successfully",
+                  underline=True)

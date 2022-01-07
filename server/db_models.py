@@ -1,17 +1,15 @@
+import sqlalchemy
 from flask import request
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
 
-from server_config import defaults
+from entry_manager import add_known_list, add_severity, log_internal, log_uncaught_exception
 
 db = SQLAlchemy()
-# Severities classes (FG Color, BG Color). The key is the severity
-severities = defaults["SEVERITIES"]
-known_list = {}                                # User list with proper name, expected URL and color
-db_entries = []                                # DB Fetched past entries
 
 
+# Models ---------------------------------------------------------------------------------------------------------------
 class Severity(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String)
@@ -47,25 +45,15 @@ class Users(UserMixin, db.Model):
 
 
 # Methods --------------------------------------------------------------------------------------------------------------
-def add_known_list(url, fore_color, backcolor, name):
-    """
-    Add an url to the known server's list
-    :param url: The new url (user) to add
-    :param fore_color: The new user's (text) color
-    :param backcolor: The new user's background color
-    :param name: The new user's nickname
-    """
-    known_list[url] = (fore_color, backcolor, name)
-
-
 # noinspection PyUnresolvedReferences
 def fetch_db():
     """
-    Fetches from the database all severities and users. Called only on startup
+    Fetches from the database all severities and users. If unable, will use default values defined on 'server_config'.
+    Called only on 'server_boot', on startup
     """
     # Fetching Severities classes, since they are atomic
-    global severities
     db_sev = {}
+    db_users = {}
     table_sev = "severities"
     table_usr = "users"
     try:
@@ -74,25 +62,33 @@ def fetch_db():
             db_sev[sev.name] = (sev.forecolor, sev.backcolor)
     except sqlalchemy.exc.ProgrammingError:
         db_sev.clear()
-        internal_log(severity="attention", comment=f"The table {table_sev} does not exist")
+        log_internal(severity="Attention", comment=f"The table {table_sev} does not exist")
     except Exception as exc:
         db_sev.clear()
-        log_server.log_uncaught_exception(str(exc), request.json)
+        log_uncaught_exception(str(exc), request.json)
     finally:
         if len(db_sev) == 0:
-            internal_log(severity="warning", comment=f"The table {table_sev} does not contains labels for severity."
+            log_internal(severity="Warning", comment=f"The table {table_sev} does not contains labels for severity."
                                                      f" Using default values")
         else:
-            severities = db_sev
+            for key in list(db_sev.keys()):
+                add_severity(key, db_sev[key][0], db_sev[key][1])
+            log_internal(severity="Success", comment=f"Loaded {len(db_sev)} severity classes from the database")
     # Fetching users and their colors
-    global known_list
     try:
         stmt = text(f"SELECT * FROM {table_usr};")
         for usr in Users.query.from_statement(stmt):
-            add_known_list(usr.url, usr.forecolor, usr.backcolor, usr.name)
+            db_users[usr.url] = (usr.forecolor, usr.backcolor, usr.name)
     except sqlalchemy.exc.ProgrammingError:
-        internal_log(severity="attention", comment=f"The table {table_usr} does not exist")
+        log_internal(severity="Attention", comment=f"The table {table_usr} does not exist. Using default values")
     except Exception as exc:
-        db_sev.clear()
-        log_server.log_uncaught_exception(str(exc), request.json)
+        log_uncaught_exception(str(exc), request.json)
+    finally:
+        if len(db_users) == 0:
+            log_internal(severity="Warning", comment=f"The table {table_usr} does not contains users."
+                                                     f" Using default values")
+        else:
+            for key in list(db_users.keys()):
+                add_known_list(key, db_users[key][0], db_users[key][1], db_users[key][2])
+            log_internal(severity="Success", comment=f"Loaded {len(db_users)} users from the database")
     # Fetch past entries

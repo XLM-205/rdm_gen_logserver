@@ -1,10 +1,9 @@
-from flask import request, render_template
 import datetime
+from flask import request, render_template
 from typing import Tuple
 
-from classes import severities, known_list
-from server_config import defaults, log_config
-from entry_manager import log_count
+from server_config import defaults, logger_config
+from entry_manager import log_count, severities, known_list
 
 
 def prepare_page(entry_count, filter_type, filter_target) -> Tuple[dict, int, int, int]:
@@ -22,9 +21,9 @@ def prepare_page(entry_count, filter_type, filter_target) -> Tuple[dict, int, in
         if request.args.get("epp") is not None and 0 < int(request.args.get("epp")) <= entry_count:
             per_page = int(request.args.get("epp"))
         else:
-            per_page = defaults["UI"]["EPP"]
+            per_page = defaults["INTERFACE"]["PAGE"]["EPP"]
     except ValueError:  # Field 'epp=" was too big
-        per_page = defaults["UI"]["EPP"]
+        per_page = defaults["INTERFACE"]["PAGE"]["EPP"]
     div = entry_count % per_page
     if div == 0:
         max_page = int(entry_count / per_page)
@@ -44,13 +43,15 @@ def prepare_page(entry_count, filter_type, filter_target) -> Tuple[dict, int, in
         "count": entry_count,
         "entries": [],
         "epp": per_page,
+        "epp_list": defaults["INTERFACE"]["PAGE"]["EPP_LIST"],
+        "fetch_interval": defaults["INTERFACE"]["PAGE"]["FETCH_INTERVAL"],
         "filter": filter_type,
         "filter_target": filter_target,
         "last_update": datetime.datetime.now().strftime("%H:%M:%S - %d/%m/%Y"),
-        "login": log_config["LOGIN"],
+        "login": logger_config["LOGIN"],
         "page": (cur_page if entry_count > 0 else 0),
         "page_max": max_page,
-        "public": log_config["PUBLIC"],
+        "public": logger_config["PUBLIC"],
         "severities": severities,
         "servers": known_list,
         "total": entries_total,

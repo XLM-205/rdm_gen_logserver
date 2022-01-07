@@ -32,9 +32,9 @@
 			<div class="nav_dropdown">
 				<button class="dropbtn">{{ data["epp"] }} Entries per Page</button>
 				<div class="drop-content">
-					<a href="?p={{ data['page'] }}&epp=10&f={{data['filter']}}&ftgt={{data['filter_target']}}">10 Entries</a>
-					<a href="?p={{ data['page'] }}&epp=20&f={{data['filter']}}&ftgt={{data['filter_target']}}">20 Entries</a>
-					<a href="?p={{ data['page'] }}&epp=50&f={{data['filter']}}&ftgt={{data['filter_target']}}">50 Entries</a>
+					{% for epp in data["epp_list"] %}
+						<a href="?p={{ data['page'] }}&epp={{epp}}&f={{data['filter']}}&ftgt={{data['filter_target']}}">{{epp}} Entries</a>
+					{% endfor %}
 				</div>
 			</div>
 			{% if '/old' in request.url_rule.rule %}
@@ -127,7 +127,7 @@
 				else if ("{{data["filter"]}}" == "from") {
 					document.getElementById("filter_servers_bttn").className = "filter_active";
 				}
-				setTimeout(fetcher, 3000);
+				setTimeout(fetcher, {{ data["fetch_interval"] }});
 			}
 
 			function toggle_auto() {
@@ -173,7 +173,7 @@
 								}
 							}
 						}
-					setTimeout(fetcher, 3000);
+					setTimeout(fetcher, {{ data["fetch_interval"] }});
 				});
 			}
 

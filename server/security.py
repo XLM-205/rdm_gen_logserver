@@ -5,8 +5,9 @@ from flask import flash, url_for
 from flask_login import login_user
 from werkzeug.utils import redirect
 
-from classes import Users
-from server_config import defaults, log_config, print_format
+from db_models import Users
+from console_printers import print_verbose
+from server_config import defaults
 from entry_manager import log_internal
 
 # Holds all ips that tried to connect "{IP}": [tries: int, locked: bool, lock_until: datetime]
@@ -102,9 +103,8 @@ def attempt_login(log_in, wp, ip_address, remember=False):
             login_attempts[ip_address][1] = False
             user = try_login(log_in, wp)
         else:
-            if log_config["VERBOSE"]:
-                print_format(f"[ROUTES] IP {ip_address} is still locked until {login_attempts[ip_address][2]}",
-                             color=defaults["CC"]["ROUTES"])
+            print_verbose(sender=__name__,
+                          message=f"IP {ip_address} is still locked until {login_attempts[ip_address][2]}")
             return redirect(url_for("auth.login"))
     else:   # User is unknown
         login_attempts[ip_address] = [0, False, None]
@@ -117,18 +117,15 @@ def attempt_login(log_in, wp, ip_address, remember=False):
             lockout = datetime.now() + timedelta(seconds=defaults["SECURITY"]["LOGIN"]["LOCKOUT"])
             login_attempts[ip_address][1] = True
             login_attempts[ip_address][2] = lockout
-            if log_config["VERBOSE"]:
-                print_format(f"[ROUTES] IP {ip_address} is locked until {login_attempts[ip_address][2]}",
-                             color=defaults["CC"]["ROUTES"])
+            print_verbose(sender=__name__,
+                          message=f"IP {ip_address} is locked until {login_attempts[ip_address][2]}")
         flash("Invalid Login")
-        if log_config["VERBOSE"]:
-            print_format(f"[ROUTES] IP {ip_address} failed to login (Attempt {login_attempts[ip_address][0]})",
-                         color=defaults["CC"]["ROUTES"])
+        print_verbose(sender=__name__,
+                      message=f"IP {ip_address} failed to login (Attempt {login_attempts[ip_address][0]})")
         return redirect(url_for("auth.login"))
     login_attempts[ip_address][0] = 0
     login_attempts[ip_address][1] = False
-    if log_config["VERBOSE"]:
-        print_format(f"[ROUTES] IP {ip_address} logged in successfully",
-                     color=defaults["CC"]["ROUTES"])
+    print_verbose(sender=__name__,
+                  message=f"IP {ip_address} logged in successfully")
     login_user(user, remember=remember)
     return redirect(url_for("main.show_recent_entries"))
