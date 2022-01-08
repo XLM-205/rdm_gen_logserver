@@ -7,7 +7,7 @@ from flask import Flask
 from db_models import fetch_db, db, Users
 from console_printers import print_verbose
 from server_config import logger_config, defaults
-from entry_manager import known_list, log_uncaught_exception, log_internal
+from entry_manager import servers_list, log_uncaught_exception, log_internal
 
 
 def server_init(is_pre_init: bool):
@@ -43,7 +43,7 @@ def server_init(is_pre_init: bool):
             log_internal(severity="Error", body=func,
                          comment=f"Error during {order} Initialization of {func[0]}({func[1]})")
         except Exception as exc:
-            log_uncaught_exception(str(exc), func)
+            log_uncaught_exception(str(exc), func, __name__)
     if logger_config["CLEAR_INIT"]:
         init_set.clear()
     print_verbose(sender=__name__,
@@ -54,6 +54,7 @@ def create_app():
     """Starts, initializes the server and connects the database"""
     app = Flask(__name__)
     # Pre initialization phase
+    # logger_config["PRE_INIT"].append((log_internal, ("Information", "Log Server is initializing...")))
     with app.app_context():
         if logger_config["LOAD_PRIVATE"]:
             private_info_fill()
@@ -80,6 +81,8 @@ def create_app():
     app.register_blueprint(routes.auth)
     app.register_blueprint(routes.main)
 
+    servers_list["LogServer"] = defaults["INTERNAL"]["SERVER_NAME"]  # Add the server as an filter option
+    print_verbose(sender=__name__, message="Initializing Database...")
     with app.app_context():
         if db_uri is not None and db_uri != "" and logger_config["USE_DB"] is True:
             db.init_app(app)
@@ -91,10 +94,10 @@ def create_app():
             def load_user(user_id):
                 return Users.query.get(int(user_id))
             fetch_db()
+            print_verbose(sender=__name__, message="Database Initialized")
         else:
             db_msg = "Log Server running WITHOUT Database support"
-            print_verbose(sender=__name__,
-                          message=db_msg)
+            print_verbose(sender=__name__, message=db_msg)
             logger_config["POST_INIT"].append((log_internal, ("Attention", db_msg)))
             logger_config["LOGIN"] = False     # If we don't have a database, we can't login
 
@@ -113,10 +116,10 @@ def create_app():
             logger_config["POST_INIT"].append((log_internal, ("Warning", public_mode_msg)))
 
         logger_config["POST_INIT"].append((log_internal, ("Success", "Log Server Started successfully")))
+        print_verbose(sender=__name__, message="Server Initialization complete", underline=True)
         server_init(is_pre_init=False)
-        known_list["LogServer"] = defaults["INTERNAL"]["SERVER_NAME"]   # Add the server as an filter option
 
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", defaults["FALLBACK"]["PORT"])), use_reloader=False)
+    return app
 
 
 def private_info_fill():

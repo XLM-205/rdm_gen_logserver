@@ -3,7 +3,7 @@ from flask import request, render_template
 from typing import Tuple
 
 from server_config import defaults, logger_config
-from entry_manager import log_count, severities, known_list
+from entry_manager import log_count, severities, servers_list
 
 
 def prepare_page(entry_count, filter_type, filter_target) -> Tuple[dict, int, int, int]:
@@ -53,7 +53,7 @@ def prepare_page(entry_count, filter_type, filter_target) -> Tuple[dict, int, in
         "page_max": max_page,
         "public": logger_config["PUBLIC"],
         "severities": severities,
-        "servers": known_list,
+        "servers": servers_list,
         "total": entries_total,
     }
     return out, cur_page, max_page, per_page

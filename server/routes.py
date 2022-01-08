@@ -6,7 +6,7 @@ from flask import Blueprint, request, render_template, url_for, redirect
 
 from server_config import defaults, logger_config
 from entry_manager import log_count, log_purge, log_add, log_get, log_internal, log_uncaught_exception, \
-                          add_severity, add_known_list
+                          add_severity, add_server
 from paging import prepare_page, serve_page
 from security import attempt_login
 
@@ -136,7 +136,7 @@ def set_info():
             if req_type == "severity":
                 add_severity(req[key_name].lower(), req[key_color], req[key_backcolor], allow_replace=True)
             elif req_type == "server":
-                add_known_list(req[key_url], req[key_color], req[key_backcolor], req[key_name], allow_replace=True)
+                add_server(req[key_url], req[key_color], req[key_backcolor], req[key_name], allow_replace=True)
                 log_internal(severity="Success", comment=f"Added a new server '{req[key_url]}' ({req[key_name]})")
         except KeyError:
             return redirect(url_for("main.show_recent_entries"))
@@ -145,8 +145,8 @@ def set_info():
     except TypeError:
         log_internal(severity="Error", comment="Request have an invalid type", body=request.json)
     except Exception as exc:
-        log_uncaught_exception(str(exc), request.json)
-    finally:
+        log_uncaught_exception(str(exc), request.json, __name__)
+    finally:    # Be careful! 'finally' ALWAYS get called last in a try block, even with returns!
         return redirect(url_for("main.show_recent_entries"))
 
 
