@@ -7,7 +7,7 @@ setup(
     description="Logs optional communication between anything and provides a visual interface",
     license="GNU",
     install_requires=["flask", "flask-sqlalchemy", "flask-login", "flask-sslify", "requests",
-                      "psycopg2", "werkzeug", "sqlalchemy", ],
+                      "psycopg2", "werkzeug", "sqlalchemy", "psutil", ],
     entry_points={
         "console_scripts": [
             # <Nome do Comando>=<Modulo (Arquivo)>:<Funcao>

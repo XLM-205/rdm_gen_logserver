@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from server_config import defaults, logger_config
 
 
@@ -20,7 +22,8 @@ def print_verbose(sender: str, message: str, color: str = None, bold: bool = Fal
             printer_color = color
         elif sender in defaults["INTERFACE"]["CONSOLE"]:
             printer_color = defaults["INTERFACE"]["CONSOLE"][sender]
-        print_rich(f"[{sender}] {message}", color=printer_color, bold=bold, underline=underline)
+        print_rich(f"[{datetime.now().strftime('%H:%M:%S.%f')}][{sender}] {message}",
+                   color=printer_color, bold=bold, underline=underline)
 
 
 def print_rich(message: str, color=None, bold=False, underline=False):

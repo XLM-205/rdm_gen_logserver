@@ -1,14 +1,14 @@
 import flask
+import flask_login
 import sqlalchemy
 from datetime import datetime, timedelta
-from flask import flash, url_for
+from flask import flash
 from flask_login import login_user
-from werkzeug.utils import redirect
 
 from db_models import Users
 from console_printers import print_verbose
 from server_config import defaults
-from entry_manager import log_internal
+from entry_manager import log_uncaught_exception, log_internal_echo
 
 # Holds all ips that tried to connect "{IP}": [tries: int, locked: bool, lock_until: datetime]
 login_attempts = {}
@@ -51,7 +51,7 @@ def injection_guard(queries: []):
             query.replace(replace[0], replace[1])
 
 
-def try_login(log_in, wp):
+def make_login(log_in, wp):
     """
     Tries to login, verifying first against SQL Injection attempts
     :param log_in: The login credentials (username / server url)
@@ -62,22 +62,19 @@ def try_login(log_in, wp):
     try:
         injection_guard([log_in, wp])
         user = Users.authenticate(log_in, wp)
-    except InjectionToken:
+    except (InjectionToken, sqlalchemy.exc.ProgrammingError):
         # Probable SQL Injection attack!
-        log_internal(severity="Critical",
-                     comment=f"SQL Injection Attempt identified from {flask.request.remote_addr} !",
-                     body={"log_in": log_in, "wp": wp})
-        flash("Login information had invalid characters")
-        return None
-    except sqlalchemy.exc.ProgrammingError:
-        # Probable SQL Injection attack!
-        log_internal(severity="Critical",
-                     comment=f"SQL Injection Attempt identified from {flask.request.remote_addr} !",
-                     body={"log_in": log_in, "wp": wp})
+        log_internal_echo(severity="Critical", sender=__name__,
+                          comment=f"SQL Injection Attempt identified from {flask.request.remote_addr} !",
+                          body={"log_in": log_in, "wp": wp})
         flash("Login information had invalid characters")
         return None
     except (sqlalchemy.exc.NoSuchColumnError, AttributeError, TypeError):
         flash("Invalid Login Attempt")
+        return None
+    except Exception as exc:
+        log_uncaught_exception(str(exc), None, __name__)
+        print_verbose(sender=__name__, message=f"Uncaught exception trying to login user {log_in} with pass {wp}")
         return None
     return user
 
@@ -89,43 +86,61 @@ def attempt_login(log_in, wp, ip_address, remember=False):
     :param wp: The WebPassword
     :param ip_address: Client's IP address currently attempting to login
     :param remember: If True, remember this user on the next login
-    :return: A redirect to the actual Server GUI if successful, or back to the login page, if failed
+    :return: A HTTP code relative to the response of the attempt.
+    200 for a successful login, 401 for a failed one and 403 if locked
     """
     # Safeguarding against brute force
-    # 403 -> Known IP
-    if ip_address in login_attempts:     # User is known
-        if login_attempts[ip_address][1] is False:
-            # User not locked. Attempt login
-            user = try_login(log_in, wp)
-        elif login_attempts[ip_address][2] <= datetime.now():
-            # User is locked, but his lock have expired
-            login_attempts[ip_address][0] = 0
-            login_attempts[ip_address][1] = False
-            user = try_login(log_in, wp)
-        else:
-            print_verbose(sender=__name__,
-                          message=f"IP {ip_address} is still locked until {login_attempts[ip_address][2]}")
-            return redirect(url_for("auth.login"))
-    else:   # User is unknown
-        login_attempts[ip_address] = [0, False, None]
-        user = try_login(log_in, wp)
+    success = 200
+    bad_request = 400
+    failed = 401
+    locked = 403
+    try:
+        if ip_address in login_attempts:     # User is known
+            if login_attempts[ip_address][1] is False:
+                # User not locked. Attempt login
+                user = make_login(log_in, wp)
+            elif login_attempts[ip_address][2] <= datetime.now():
+                # User is locked, but his lock have expired
+                login_attempts[ip_address][0] = 0
+                login_attempts[ip_address][1] = False
+                user = make_login(log_in, wp)
+            else:
+                print_verbose(sender=__name__,
+                              message=f"IP {ip_address} is still locked until {login_attempts[ip_address][2]}")
+                # return redirect(url_for("auth.login"))
+                return locked
+        else:   # User is unknown
+            login_attempts[ip_address] = [0, False, None]
+            user = make_login(log_in, wp)
 
-    # Attempting login
-    if user is None:
-        login_attempts[ip_address][0] += 1
-        if login_attempts[ip_address][0] >= defaults["SECURITY"]["LOGIN"]["MAX_TRIES"]:  # Lock user
-            lockout = datetime.now() + timedelta(seconds=defaults["SECURITY"]["LOGIN"]["LOCKOUT"])
-            login_attempts[ip_address][1] = True
-            login_attempts[ip_address][2] = lockout
+        # Attempting login
+        if user is None:
+            login_attempts[ip_address][0] += 1
+            if login_attempts[ip_address][0] >= defaults["SECURITY"]["LOGIN"]["MAX_TRIES"]:  # Lock user
+                lockout = datetime.now() + timedelta(seconds=defaults["SECURITY"]["LOGIN"]["LOCKOUT"])
+                login_attempts[ip_address][1] = True
+                login_attempts[ip_address][2] = lockout
+                log_internal_echo(severity="Attention", sender=__name__,
+                                  comment=f"IP {ip_address} is locked until {login_attempts[ip_address][2]}"
+                                          f" (Too many failed attempts)")
+            flash("Invalid Login")
             print_verbose(sender=__name__,
-                          message=f"IP {ip_address} is locked until {login_attempts[ip_address][2]}")
-        flash("Invalid Login")
+                          message=f"IP {ip_address} failed to login (Attempt {login_attempts[ip_address][0]})")
+            # return redirect(url_for("auth.login"))
+            return failed
+    except (TypeError, KeyError) as exc:
         print_verbose(sender=__name__,
-                      message=f"IP {ip_address} failed to login (Attempt {login_attempts[ip_address][0]})")
-        return redirect(url_for("auth.login"))
+                      message=f"Login exception trying to login user {log_in} with pass {wp}: '{str(exc)}'")
+        return bad_request
+    except Exception as exc:
+        log_uncaught_exception(str(exc), None, __name__)
+        print_verbose(sender=__name__,
+                      message=f"Uncaught exception trying to login user {log_in} with pass {wp}: '{str(exc)}'")
+        return bad_request
     login_attempts[ip_address][0] = 0
     login_attempts[ip_address][1] = False
-    print_verbose(sender=__name__,
-                  message=f"IP {ip_address} logged in successfully")
     login_user(user, remember=remember)
-    return redirect(url_for("main.show_recent_entries"))
+    print_verbose(sender=__name__,
+                  message=f"{flask_login.current_user.name} ({ip_address}) logged in successfully")
+    # return redirect(url_for("main.show_recent_entries"))
+    return success

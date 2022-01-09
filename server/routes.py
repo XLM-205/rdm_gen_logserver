@@ -1,9 +1,12 @@
 import json
 import flask
+import flask_login
+import psutil
 from flask_login import login_required, logout_user
 from werkzeug.exceptions import BadRequest
 from flask import Blueprint, request, render_template, url_for, redirect
 
+from console_printers import print_verbose
 from server_config import defaults, logger_config
 from entry_manager import log_count, log_purge, log_add, log_get, log_internal, log_uncaught_exception, \
                           add_severity, add_server
@@ -19,6 +22,7 @@ main = Blueprint("main", __name__)
 def server_fetch():
     internal = {
         "entry_count": log_count(),
+        "dia_ram": psutil.virtual_memory().percent,
         # "services_timedout": is_service_locked
     }
     return json.dumps(internal), 200
@@ -150,10 +154,24 @@ def set_info():
         return redirect(url_for("main.show_recent_entries"))
 
 
+@main.route('/cli/whoami', methods=['GET', 'POST'])
+@login_required
+def cli_whoami():
+    cli_info = {
+        "ip": flask.request.remote_addr
+    }
+    if flask_login.current_user is not None:
+        cli_info["user"] = flask_login.current_user.name
+        cli_info["forecolor"] = flask_login.current_user.forecolor
+        cli_info["backcolor"] = flask_login.current_user.backcolor
+        cli_info["id"] = flask_login.current_user.id
+    return cli_info, 200
+
+
 @main.route('/info', methods=['GET'])
 def info():
     out = {
-        "component": "General Purpose Log Server",
+        "component": "General Purpose & Simple Log Server",
         "version": defaults["INTERNAL"]["VERSION"],
         "description": "Provides a public, standardized and easy to use visual log interface",
         "access_point": defaults["INTERNAL"]["ACCESS_POINT"],
@@ -183,39 +201,51 @@ def login_post():
         log_in = request.form.get("log_in")
         wp = request.form.get("password")
         remember = True if request.form.get("remember") else False
-        return attempt_login(log_in, wp, flask.request.remote_addr, remember=remember)
+        code = attempt_login(log_in, wp, flask.request.remote_addr, remember=remember)
+        if code == 200:
+            return redirect(url_for("main.show_recent_entries"))
+        else:
+            return redirect(url_for("auth.login"))
     else:
         return redirect(url_for("main.show_recent_entries"))
 
 
-@auth.route("/login/cli", methods=["POST"])
+@auth.route("/cli/login", methods=["POST"])
 def login_post_cli():
+    bad_msg = "Bad Login"
     if logger_config["LOGIN"] is True:
         try:
             req = request.json
             remember = False
             try:
                 usr = req["user"]
-            except KeyError:
-                return "Bad Login", 400
-            try:
                 wp = req["webpass"]
             except KeyError:
-                return "Bad Login", 400
+                return bad_msg, 400
             try:
                 remember = req["remember"]
             except KeyError:
                 pass    # Just ignore
-            return attempt_login(usr, wp, flask.request.remote_addr, remember)
+            code = attempt_login(usr, wp, flask.request.remote_addr, remember)
+            if code == 200:
+                cli_msg = f"Logged in as {flask_login.current_user.name}"
+            elif code == 401:
+                cli_msg = "Login failed"
+            elif code == 403:
+                cli_msg = "Login attempts exceed maximum allowed"
+            else:
+                cli_msg = "Unknown response from the login server"
+            return cli_msg, code
         except BadRequest:
-            return "Bad Login", 400
+            return bad_msg, 400
     else:
         return redirect(url_for("main.show_recent_entries"))
 
 
-@auth.route("/logout", methods=["GET"])
+@auth.route("/logout", methods=['GET', 'POST'])
 def logout():
     if logger_config["LOGIN"] is True:
+        print_verbose(sender=__name__, message=f"{flask_login.current_user.name} Logged out")
         logout_user()
         return redirect(url_for("auth.login"))
     else:

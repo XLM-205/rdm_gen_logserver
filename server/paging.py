@@ -1,4 +1,6 @@
-import datetime
+import flask_login
+import psutil
+from datetime import datetime
 from flask import request, render_template
 from typing import Tuple
 
@@ -7,7 +9,7 @@ from entry_manager import log_count, severities, servers_list
 
 
 def prepare_page(entry_count, filter_type, filter_target) -> Tuple[dict, int, int, int]:
-    """ Compute and prepares the variables used when rendering the page.
+    """Compute and prepares the variables used when rendering the page.
     :returns:
     dict: A tuple containing the information from the server in a dict, including current page, maximum amount of
           pages, Entries Per Page, the count of entries stored, the last update time and the entry list
@@ -40,21 +42,27 @@ def prepare_page(entry_count, filter_type, filter_target) -> Tuple[dict, int, in
     entries_total = log_count()
     # Page data
     out = {
+        # 'about' section is an optional tuple
+        "about": (),
         "count": entry_count,
+        "dia_ram": psutil.virtual_memory().percent,
         "entries": [],
         "epp": per_page,
         "epp_list": defaults["INTERFACE"]["PAGE"]["EPP_LIST"],
         "fetch_interval": defaults["INTERFACE"]["PAGE"]["FETCH_INTERVAL"],
         "filter": filter_type,
         "filter_target": filter_target,
-        "last_update": datetime.datetime.now().strftime("%H:%M:%S - %d/%m/%Y"),
+        "last_update": datetime.now().strftime("%H:%M:%S - %d/%m/%Y"),
         "login": logger_config["LOGIN"],
         "page": (cur_page if entry_count > 0 else 0),
         "page_max": max_page,
+        "prod_name": defaults["INTERNAL"]["PRODUCT_NAME"],
         "public": logger_config["PUBLIC"],
         "severities": severities,
         "servers": servers_list,
         "total": entries_total,
+        "user": None if flask_login.current_user is None else (flask_login.current_user.as_tuple()),
+        "version": defaults["INTERNAL"]["VERSION"],
     }
     return out, cur_page, max_page, per_page
 

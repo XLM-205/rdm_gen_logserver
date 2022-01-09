@@ -12,7 +12,7 @@ from server_boot import create_app
 if __name__ == "__main__":
     # Pre-configuring our server
     logger_config["VERBOSE"] = True
-    # logger_config["LOGIN"] = False
+    logger_config["LOGIN"] = False
     # logger_config["USE_DB"] = False
     # logger_config["LOAD_PRIVATE"] = True
     # logger_config["POST_INIT"].append((fill_simulate, (200, severities, known_list)))

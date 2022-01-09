@@ -3,6 +3,7 @@ from flask import request
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
+from typing import Tuple
 
 from entry_manager import add_server, add_severity, log_internal, log_uncaught_exception, log_internal_echo, \
                           lists_count, servers_list, severities
@@ -45,6 +46,13 @@ class Users(UserMixin, db.Model):
         """
         stmt = text(f"SELECT * FROM authenticate('{identifier}', '{webpass}');")
         return cls.query.from_statement(stmt).first()
+
+    def as_tuple(self) -> Tuple[int, str, str, str, str]:
+        """
+        Return itself as a tuple, following the order of declared fields (webpass is ignored for security reasons)
+        :return: (id, name, url, forecolor, backcolor)
+        """
+        return self.id, self.name, self.url, self.forecolor, self.backcolor
 
 
 # Methods --------------------------------------------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 :root {
     --accent-color: #03b6fc;
     --attention-color: #f70;
+    --error-color: #f20;
 }
 
 body {
@@ -51,10 +52,22 @@ font-size: 18px;
 	font-family: inherit;
 }
 
-#navbar a.update_me {
+#navbar a.update_me_right, p.update_me_right {
 	color: #f2f2f2;
 	background-color: var(--attention-color);
 	float: right;
+}
+
+#navbar a.update_me, p.update_me {
+	color: #f2f2f2;
+	background-color: var(--attention-color);
+	float: left;
+}
+
+#navbar a.server_error, p.server_error {
+	color: #f2f2f2;
+	background-color: var(--error-color);
+	float: left;
 }
 
 #navbar a.common_nav, p.common_nav, .dropbtn {
