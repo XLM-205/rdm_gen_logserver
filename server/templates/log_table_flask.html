@@ -66,7 +66,24 @@
 			{% if data["login"] == true%}
 				<a class="right_nav" id="logout-btn" href="/logout">Logout</a>
 			{% endif %}
-			<p class="right_nav" id="server-clock">Last Update: {{ data["last_update"] }}</p>
+			<div class="nav_dropdown_right"> <!-- Servers Filter-->
+				<button class="dropbtn" id="server-clock">Last Update: {{ data["last_update"] }}</button>
+				<div class="drop-content">
+					<!-- Default items -->
+					<p>Version: {{ data['version'] }}</p>
+					{% if data["login"] == true%}
+						<p style="color:{{ data['user'][3] }}; background-color:{{ data['user'][4] }}">Logged as: ({{ data['user'][0] }}) {{ data['user'][1] }}</p>
+						<p>At: {{ data['user'][2] }}</p>
+					{% endif %}
+					<p>Updating every {{ data['fetch_interval'] }}ms</p>
+					<p id="diagnostics-tab">Usage: {{ data['dia_ram'] }}%</p>
+					<!-- 'About' items (extra) -->
+					{% for about in data['about'] %}
+						<p>{{ about }}</p>
+					{% endfor %}
+					<a href="/info">About {{ data['prod_name'] }}</a>
+				</div>
+			</div>
 			<a class="right_nav" id="update_btn" href="?p={{ data['page'] }}&epp={{ data['epp'] }}&f={{data['filter']}}&ftgt={{data['filter_target']}}">Update</a>
 		</div>
 		<div id="log_info_table">
@@ -106,89 +123,101 @@
 		</div>
 	</body>
 	<script>
-			window.onscroll = function() {scrollFunction()};
+		window.onscroll = function() {scrollFunction()};
 
-			var navbar = document.getElementById("navbar");
-			var sticky = navbar.offsetTop;
+		var navbar = document.getElementById("navbar");
+		var sticky = navbar.offsetTop;
 
-			var auto_update = false;
+		var auto_update = false;
+		var isOffline = false;
 
-			function loaded() {
-				if(window.localStorage.getItem("auto_update") != null) {
-					auto_update = (window.localStorage.getItem("auto_update") == "t" ? true : false);
-				}
-				if (auto_update) {
-					document.getElementById("auto_update_bttn").className = "update_auto";
-					document.getElementById("auto_update_bttn").innerHTML = "Auto Update";
-				}
-				if ("{{data["filter"]}}" == "severity") {
-					document.getElementById("filter_severity_bttn").className = "filter_active";
-				}
-				else if ("{{data["filter"]}}" == "from") {
-					document.getElementById("filter_servers_bttn").className = "filter_active";
-				}
-				setTimeout(fetcher, {{ data["fetch_interval"] }});
+		function loaded() {
+			if(window.localStorage.getItem("auto_update") != null) {
+				auto_update = (window.localStorage.getItem("auto_update") == "t" ? true : false);
 			}
-
-			function toggle_auto() {
-				auto_update = !auto_update;
-				if (auto_update) {
-					document.getElementById("auto_update_bttn").className = "update_auto";
-					document.getElementById("auto_update_bttn").innerHTML = "Auto Update";
-				}
-				else {
-					document.getElementById("auto_update_bttn").className = "common_nav";
-					document.getElementById("auto_update_bttn").innerHTML = "Manual Update";
-				}
-				window.localStorage.setItem("auto_update", (auto_update ? "t" : "f"));
+			if (auto_update) {
+				document.getElementById("auto_update_bttn").className = "update_auto";
+				document.getElementById("auto_update_bttn").innerHTML = "Auto Update";
 			}
-
-			function refresh() {
-				window.location.reload(true);
-				document.location.href ="?p=" + {{ data["page"] }} + "&epp=" + {{ data["epp"] }} +
-										"&f=" + "{{data['filter']}}" + "&ftgt=" + "{{data['filter_target']}}";
+			if ("{{data["filter"]}}" == "severity") {
+				document.getElementById("filter_severity_bttn").className = "filter_active";
 			}
+			else if ("{{data["filter"]}}" == "from") {
+				document.getElementById("filter_servers_bttn").className = "filter_active";
+			}
+			setTimeout(fetcher, {{ data["fetch_interval"] }});
+		}
 
-			function fetcher() {
-				fetch('/server/status').then(
-					function (response) {
-						return response.json();
-					}).then(function (json) {
-						var dif = json["entry_count"] - {{ data["total"] }};
+		function toggle_auto() {
+			auto_update = !auto_update;
+			if (auto_update) {
+				document.getElementById("auto_update_bttn").className = "update_auto";
+				document.getElementById("auto_update_bttn").innerHTML = "Auto Update";
+			}
+			else {
+				document.getElementById("auto_update_bttn").className = "common_nav";
+				document.getElementById("auto_update_bttn").innerHTML = "Manual Update";
+			}
+			window.localStorage.setItem("auto_update", (auto_update ? "t" : "f"));
+		}
+
+		function refresh() {
+			window.location.reload(true);
+			document.location.href ="?p=" + {{ data["page"] }} + "&epp=" + {{ data["epp"] }} + "&f=" + "{{data['filter']}}" + "&ftgt=" + "{{data['filter_target']}}";
+		}
+
+		function fetcher() {
+			fetch('/server/status')
+			.then(function (response) {
+				return response.json();
+			})
+			.then(function (json) {
+				if (isOffline) {
+					refresh();
+				}
+				var dif = json["entry_count"] - {{ data["total"] }};
+				if(dif != 0) {
+					if (auto_update) {
+						refresh();
+					}
+					else {
+						var curRAM = json["dia_ram"];
 						var isFiltered = {{ data["count"] }} != {{ data["total"] }};
-						if(dif != 0) {
-							if (auto_update) {
-								refresh();
+						document.getElementById("update_btn").className = "update_me_right";
+						document.title = '* New Entry';
+						if (dif > 0) {
+							if (isFiltered) {
+								document.getElementById("entry_counter").innerHTML = "Total Entries: {{ data["count"] }} / {{ data["total"] }} (+" + dif + ")";
 							}
 							else {
-								document.getElementById("update_btn").className = "update_me";
-								document.title = '* New Entry';
-								if (dif > 0) {
-									if (isFiltered) {
-										document.getElementById("entry_counter").innerHTML = "Total Entries: {{ data["count"] }} / {{ data["total"] }} (+" + dif + ")";
-									}
-									else {
-										document.getElementById("entry_counter").innerHTML = "Total Entries: {{ data["count"] }} (+" + dif + ")";
-									}
-								}
+								document.getElementById("entry_counter").innerHTML = "Total Entries: {{ data["count"] }} (+" + dif + ")";
 							}
 						}
-					setTimeout(fetcher, {{ data["fetch_interval"] }});
-				});
-			}
+						document.getElementById("diagnostics-tab").innerHTML = "Usage: " + curRAM + "%";
+					}
+				}
+			})
+			.catch(function() {
+				isOffline = true;
+				document.getElementById("entry_counter").innerHTML = "Server OFFLINE";
+				document.getElementById("entry_counter").className = "server_error";
+				document.getElementById("update_btn").innerHTML = "Reconnecting";
+				document.getElementById("update_btn").className = "update_me_right";
+			});
+			setTimeout(fetcher, {{ data["fetch_interval"] }});
+		}
 
-			function scrollFunction()
+		function scrollFunction() {
+			if (window.pageYOffset > sticky)
 			{
-			  if (window.pageYOffset > sticky)
-			  {
 				navbar.classList.add("sticky");
-			  }
-			  else
-			  {
-				navbar.classList.remove("sticky");
-			  }
 			}
-		</script>
+			else
+			{
+				navbar.classList.remove("sticky");
+			}
+		}
+	</script>
 	<footer>
 
 	</footer>
