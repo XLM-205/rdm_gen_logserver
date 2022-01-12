@@ -5,8 +5,7 @@ from flask_sslify import SSLify
 from flask import Flask
 
 from db_models import fetch_db, db, Users
-from console_printers import print_verbose
-from server_config import logger_config, defaults
+from server_config import logger_config, defaults, print_verbose
 from entry_manager import servers_list, log_uncaught_exception, log_internal
 
 
@@ -58,9 +57,11 @@ def create_app():
     with app.app_context():
         if logger_config["LOAD_PRIVATE"]:
             private_info_fill()
+            db_uri = defaults["FALLBACK"]["DB_URL"]
+        else:
+            db_uri = os.environ.get("DATABASE_URL", defaults["FALLBACK"]["DB_URL"])
         server_init(is_pre_init=True)
 
-    db_uri = os.environ.get("DATABASE_URL", defaults["FALLBACK"]["DB_URL"])
     # Fixing deprecated convention Heroku still uses
     if db_uri is None:
         db_uri = ""
@@ -83,16 +84,18 @@ def create_app():
 
     servers_list["LogServer"] = defaults["INTERNAL"]["SERVER_NAME"]  # Add the server as an filter option
     print_verbose(sender=__name__, message="Initializing Database...")
+    login_manager = LoginManager()
+    login_manager.login_view = 'auth.login'
+    login_manager.init_app(app)
+
+    @login_manager.user_loader
+    def load_user(user_id):
+        return Users.query.get(int(user_id))
+
     with app.app_context():
         if db_uri is not None and db_uri != "" and logger_config["USE_DB"] is True:
             db.init_app(app)
-            login_manager = LoginManager()
-            login_manager.login_view = 'auth.login'
-            login_manager.init_app(app)
 
-            @login_manager.user_loader
-            def load_user(user_id):
-                return Users.query.get(int(user_id))
             fetch_db()
             print_verbose(sender=__name__, message="Database Initialized")
         else:
@@ -131,8 +134,8 @@ def private_info_fill():
         print_verbose(sender=__name__,
                       message=f"Loading private resources...",
                       underline=True)
-        confidential_path = "private_resources/conf_res"
-        import_path = confidential_path.replace("/", ".")   # Since the importlib uses '.' instead of '/'
+        confidential_path = "../private_resources/conf_res"
+        import_path = "private_resources.conf_res"
         # Grabbing a local DB url
         if path.exists(confidential_path + ".py"):
             conf_res = importlib.import_module(import_path)

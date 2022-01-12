@@ -1,5 +1,4 @@
 import sqlalchemy
-from flask import request
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
@@ -7,8 +6,7 @@ from typing import Tuple
 
 from entry_manager import add_server, add_severity, log_internal, log_uncaught_exception, log_internal_echo, \
                           lists_count, servers_list, severities
-from console_printers import print_verbose
-from server_config import defaults
+from server_config import defaults, logger_config, print_verbose
 
 db = SQLAlchemy()
 
@@ -67,6 +65,7 @@ def fetch_db():
     db_users = {}
     table_sev = "severities"
     table_usr = "users"
+    # table_entry = "entries"
     try:
         stmt = text(f"SELECT * FROM {table_sev};")
         for sev in Severity.query.from_statement(stmt):
@@ -76,18 +75,21 @@ def fetch_db():
                 log_internal_echo(severity="Error", sender=__name__,
                                   comment=f"Severity id {sev.id} didn't have a valid name and was ignored")
     except sqlalchemy.exc.ProgrammingError:
-        log_internal_echo(severity="Attention", comment=f"The table {table_sev} does not exist", sender=__name__)
+        log_internal_echo(severity="Attention", sender=__name__,
+                          comment=f"The table {table_sev} does not exist or is invalid."
+                                  f"Server doesn't have database support. Severities and users using default values")
+        logger_config["USE_DB"] = False
+        return
     except Exception as exc:
         db_sev.clear()
-        log_uncaught_exception(str(exc), request.json, __name__)
-    finally:
-        if len(db_sev) == 0 or db_sev == defaults["SEVERITIES"]:
-            print_verbose(sender=__name__,
-                          message=f"The table {table_sev} did not had valid or new severities labels."
-                                  f" Keeping default values")
-        else:
-            for key in list(db_sev.keys()):
-                add_severity(key, db_sev[key][0], db_sev[key][1], allow_replace=True, log_suppress=True)
+        log_uncaught_exception(str(exc), None, __name__)
+    if len(db_sev) == 0 or db_sev == defaults["SEVERITIES"]:
+        print_verbose(sender=__name__,
+                      message=f"The table {table_sev} did not had valid or new severities labels."
+                              f" Keeping default values")
+    else:
+        for key in list(db_sev.keys()):
+            add_severity(key, db_sev[key][0], db_sev[key][1], allow_replace=True, log_suppress=True)
     # Fetching users and their colors
     try:
         stmt = text(f"SELECT * FROM {table_usr};")
@@ -99,17 +101,18 @@ def fetch_db():
                                   comment=f"User id {usr.id} didn't have a valid url and was ignored")
     except sqlalchemy.exc.ProgrammingError:
         log_internal_echo(severity="Attention", sender=__name__,
-                          comment=f"The table {table_usr} does not exist. Using default values")
+                          comment=f"The table {table_usr} does not exist or is invalid. "
+                                  f"Server doesn't have database support. Severities and users using default values")
+        logger_config["USE_DB"] = False
     except Exception as exc:
-        log_uncaught_exception(str(exc), request.json, __name__)
-    finally:
-        if len(db_users) == 0 or db_users == defaults["SERVERS"]:
-            print_verbose(sender=__name__,
-                          message=f"The table {table_usr} did not had valid or new users. Keeping default values")
-        else:
-            for key in list(db_users.keys()):
-                add_server(key, db_users[key][0], db_users[key][1], db_users[key][2],
-                           allow_replace=True, log_suppress=True)
+        log_uncaught_exception(str(exc), None, __name__)
+    if len(db_users) == 0 or db_users == defaults["SERVERS"]:
+        print_verbose(sender=__name__,
+                      message=f"The table {table_usr} did not had valid or new users. Keeping default values")
+    else:
+        for key in list(db_users.keys()):
+            add_server(key, db_users[key][0], db_users[key][1], db_users[key][2],
+                       allow_replace=True, log_suppress=True)
     sev, serv, entry = lists_count()
     log_internal(severity="Success", comment=f"Loaded {serv} servers and {sev} severities from the database",
                  body={"servers": servers_list, "severities": severities})

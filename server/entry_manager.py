@@ -1,12 +1,10 @@
 import flask
-import flask_login
-from flask import request
 from datetime import datetime
 
 from typing import Tuple
 
-from console_printers import print_verbose
-from server_config import defaults, logger_config
+from flask_wrappers import authenticated_user_is
+from server_config import defaults, logger_config, print_verbose
 
 entry_list = []     # All of our entries
 global_id = 0       # Global Entry Identifier
@@ -45,8 +43,9 @@ def log_get(filter_by=None, target=None):
     if filter_by is None:
         filter_by = "off"
     server_name = defaults["INTERNAL"]["SERVER_NAME"]
-    if logger_config["PUBLIC"] is False and logger_config["LOGIN"] is True:
-        user = flask_login.current_user.url
+    cur_user = authenticated_user_is()
+    if logger_config["PUBLIC"] is False and logger_config["LOGIN"] is True and cur_user is not None:
+        user = cur_user.url
         if filter_by != "off":
             if filter_by == 'severity':      # Filter by severity and user + internal
                 return [entry for entry in entry_list if entry.severity.casefold() == target.casefold() and
@@ -174,7 +173,7 @@ def add_severity(severity_name: str, color, backcolor, allow_replace=False, log_
                           body={'severity': severity_name, 'color': color, 'backcolor': backcolor})
         return False
     except Exception as exc:
-        log_uncaught_exception(str(exc), request.json, __name__)
+        log_uncaught_exception(str(exc), None, __name__)
         return False
 
 
@@ -221,7 +220,7 @@ def add_server(url: str, color, backcolor, name: str, allow_replace=False, log_s
                           body={'url': url, 'color': color, 'backcolor': backcolor, 'name': name})
         return False
     except Exception as exc:
-        log_uncaught_exception(str(exc), request.json, __name__)
+        log_uncaught_exception(str(exc), None, __name__)
         return False
 
 
@@ -274,7 +273,7 @@ def severity_flavor_keys(severity: str):
     except KeyError:
         pass    # Just ignore
     except Exception as exc:
-        log_uncaught_exception(str(exc), request.json, __name__)
+        log_uncaught_exception(str(exc), None, __name__)
     return flavor
 
 
@@ -296,7 +295,7 @@ def user_shade_flavor_keys(user_shade: str):
     except KeyError:
         pass    # Just ignore
     except Exception as exc:
-        log_uncaught_exception(str(exc), request.json, __name__)
+        log_uncaught_exception(str(exc), None, __name__)
     return flavor
 
 
@@ -312,5 +311,5 @@ def nickname(url: str):
     except KeyError:
         log_internal(severity="Error", comment="Known server list's 'url' key is missing!")
     except Exception as exc:
-        log_uncaught_exception(str(exc), request.json, __name__)
+        log_uncaught_exception(str(exc), None, __name__)
     return None

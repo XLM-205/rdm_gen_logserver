@@ -1,9 +1,9 @@
-import flask_login
 import psutil
 from datetime import datetime
 from flask import request, render_template
 from typing import Tuple
 
+from flask_wrappers import authenticated_user_is
 from server_config import defaults, logger_config
 from entry_manager import log_count, severities, servers_list
 
@@ -40,6 +40,7 @@ def prepare_page(entry_count, filter_type, filter_target) -> Tuple[dict, int, in
         cur_page = 1
 
     entries_total = log_count()
+    cur_user = authenticated_user_is()
     # Page data
     out = {
         # 'about' section is an optional tuple
@@ -61,7 +62,7 @@ def prepare_page(entry_count, filter_type, filter_target) -> Tuple[dict, int, in
         "severities": severities,
         "servers": servers_list,
         "total": entries_total,
-        "user": None if flask_login.current_user is None else (flask_login.current_user.as_tuple()),
+        "user": None if cur_user is None else cur_user.as_tuple(),
         "version": defaults["INTERNAL"]["VERSION"],
     }
     return out, cur_page, max_page, per_page

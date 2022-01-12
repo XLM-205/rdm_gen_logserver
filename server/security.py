@@ -6,8 +6,7 @@ from flask import flash
 from flask_login import login_user
 
 from db_models import Users
-from console_printers import print_verbose
-from server_config import defaults
+from server_config import defaults, print_verbose
 from entry_manager import log_uncaught_exception, log_internal_echo
 
 # Holds all ips that tried to connect "{IP}": [tries: int, locked: bool, lock_until: datetime]

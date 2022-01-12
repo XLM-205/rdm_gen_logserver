@@ -6,8 +6,7 @@ from flask_login import login_required, logout_user
 from werkzeug.exceptions import BadRequest
 from flask import Blueprint, request, render_template, url_for, redirect
 
-from console_printers import print_verbose
-from server_config import defaults, logger_config
+from server_config import defaults, logger_config, print_verbose
 from entry_manager import log_count, log_purge, log_add, log_get, log_internal, log_uncaught_exception, \
                           add_severity, add_server
 from paging import prepare_page, serve_page
@@ -23,7 +22,7 @@ def server_fetch():
     internal = {
         "entry_count": log_count(),
         "dia_ram": psutil.virtual_memory().percent,
-        # "services_timedout": is_service_locked
+        # "services_timed_out": is_service_locked
     }
     return json.dumps(internal), 200
 

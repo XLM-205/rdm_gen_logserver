@@ -1,7 +1,7 @@
 import os
 import random
 from entry_manager import log_add, log_internal
-from console_printers import print_verbose
+from server_config import print_verbose
 
 
 def fill_simulate(amount: int, severities: dict, known_list: dict):
