@@ -55,11 +55,12 @@ class Users(UserMixin, db.Model):
 
 # Methods --------------------------------------------------------------------------------------------------------------
 # noinspection PyUnresolvedReferences
-def fetch_db():
+def fetch_db(db_uri):
     """
     Fetches from the database all severities and users. If unable, will use default values defined on 'server_config'.
     Called only on 'server_boot', on startup
     """
+    db.create_engine(db_uri, {})
     # Fetching Severities classes, since they are atomic
     db_sev = {}
     db_users = {}
@@ -79,6 +80,7 @@ def fetch_db():
                           comment=f"The table {table_sev} does not exist or is invalid."
                                   f"Server doesn't have database support. Severities and users using default values")
         logger_config["USE_DB"] = False
+        db.engine.dispose()
         return
     except Exception as exc:
         db_sev.clear()
@@ -117,3 +119,4 @@ def fetch_db():
     log_internal(severity="Success", comment=f"Loaded {serv} servers and {sev} severities from the database",
                  body={"servers": servers_list, "severities": severities})
     # Fetch past entries
+    db.engine.dispose()

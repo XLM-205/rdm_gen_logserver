@@ -1,14 +1,17 @@
 import json
+from datetime import datetime
+
 import flask
 import flask_login
 import psutil
+
 from flask_login import login_required, logout_user
 from werkzeug.exceptions import BadRequest
 from flask import Blueprint, request, render_template, url_for, redirect
 
+from entry_manager import log_count, log_purge, log_add, log_uncaught_exception, log_internal, log_get, \
+                          add_server, add_severity
 from server_config import defaults, logger_config, print_verbose
-from entry_manager import log_count, log_purge, log_add, log_get, log_internal, log_uncaught_exception, \
-                          add_severity, add_server
 from paging import prepare_page, serve_page
 from security import attempt_login
 
@@ -22,6 +25,7 @@ def server_fetch():
     internal = {
         "entry_count": log_count(),
         "dia_ram": psutil.virtual_memory().percent,
+        "last_update": datetime.now().strftime("%H:%M:%S - %d/%m/%Y"),
         # "services_timed_out": is_service_locked
     }
     return json.dumps(internal), 200
@@ -118,7 +122,7 @@ def show_entries():
 
     for entry in entries[(cur_page - 1) * per_page:]:
         out["entries"].append(entry.json())
-        if len(out) == per_page:
+        if len(out["entries"]) == per_page:
             break
     return serve_page(out, 200)
 

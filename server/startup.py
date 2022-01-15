@@ -9,7 +9,8 @@ from server_boot import create_app
 # from entry_manager import severities, servers_list
 # from utils import fill_simulate
 
-if __name__ == "__main__":
+
+def set_config():
     # Pre-configuring our server
     logger_config["VERBOSE"] = True
     # logger_config["LOGIN"] = False
@@ -17,6 +18,19 @@ if __name__ == "__main__":
     # logger_config["LOAD_PRIVATE"] = True
     # logger_config["POST_INIT"].append((fill_simulate, (200, severities, servers_list)))
 
-    # Ready to start the server
+
+def main():
+    global app
+    set_config()
+    host = "0.0.0.0"
+    port = int(os.environ.get("PORT", defaults["FALLBACK"]["PORT"]))
     app = create_app()
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", defaults["FALLBACK"]["PORT"])), use_reloader=False)
+    app.run(host=host, port=port, use_reloader=False)
+    pass
+
+
+if __name__ == "__main__":
+    main()
+else:
+    set_config()
+    app = create_app()

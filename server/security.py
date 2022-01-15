@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from flask import flash
 from flask_login import login_user
 
-from db_models import Users
+from models import Users
 from server_config import defaults, print_verbose
 from entry_manager import log_uncaught_exception, log_internal_echo
 

@@ -4,7 +4,7 @@ from flask_login import LoginManager
 from flask_sslify import SSLify
 from flask import Flask
 
-from db_models import fetch_db, db, Users
+from models import fetch_db, db, Users
 from server_config import logger_config, defaults, print_verbose
 from entry_manager import servers_list, log_uncaught_exception, log_internal
 
@@ -52,15 +52,17 @@ def server_init(is_pre_init: bool):
 def create_app():
     """Starts, initializes the server and connects the database"""
     app = Flask(__name__)
+    config_context = app.app_context()
+    config_context.push()
+
     # Pre initialization phase
     # logger_config["PRE_INIT"].append((log_internal, ("Information", "Log Server is initializing...")))
-    with app.app_context():
-        if logger_config["LOAD_PRIVATE"]:
-            private_info_fill()
-            db_uri = defaults["FALLBACK"]["DB_URL"]
-        else:
-            db_uri = os.environ.get("DATABASE_URL", defaults["FALLBACK"]["DB_URL"])
-        server_init(is_pre_init=True)
+    if logger_config["LOAD_PRIVATE"]:
+        private_info_fill()
+        db_uri = defaults["FALLBACK"]["DB_URL"]
+    else:
+        db_uri = os.environ.get("DATABASE_URL", defaults["FALLBACK"]["DB_URL"])
+    server_init(is_pre_init=True)
 
     # Fixing deprecated convention Heroku still uses
     if db_uri is None:
@@ -92,35 +94,35 @@ def create_app():
     def load_user(user_id):
         return Users.query.get(int(user_id))
 
-    with app.app_context():
-        if db_uri is not None and db_uri != "" and logger_config["USE_DB"] is True:
-            db.init_app(app)
+    if db_uri is not None and db_uri != "" and logger_config["USE_DB"] is True:
+        db.init_app(app)
 
-            fetch_db()
-            print_verbose(sender=__name__, message="Database Initialized")
-        else:
-            db_msg = "Log Server running WITHOUT Database support"
-            print_verbose(sender=__name__, message=db_msg)
-            logger_config["POST_INIT"].append((log_internal, ("Attention", db_msg)))
-            logger_config["LOGIN"] = False     # If we don't have a database, we can't login
+        fetch_db(db_uri)
+        print_verbose(sender=__name__, message="Database Initialized")
+    else:
+        db_msg = "Log Server running WITHOUT Database support"
+        print_verbose(sender=__name__, message=db_msg)
+        logger_config["POST_INIT"].append((log_internal, ("Attention", db_msg)))
+        logger_config["LOGIN"] = False     # If we don't have a database, we can't login
 
-        # Final checks and warnings
-        if logger_config["LOGIN"] is False:
-            login_mode_msg = "Log Server DON'T REQUIRE Login"
-            app.config["LOGIN_DISABLED"] = True
-            print_verbose(sender=__name__,
-                          message=login_mode_msg)
-            logger_config["POST_INIT"].append((log_internal, ("Warning", login_mode_msg)))
+    # Final checks and warnings
+    if logger_config["LOGIN"] is False:
+        login_mode_msg = "Log Server DON'T REQUIRE Login"
+        app.config["LOGIN_DISABLED"] = True
+        print_verbose(sender=__name__,
+                      message=login_mode_msg)
+        logger_config["POST_INIT"].append((log_internal, ("Warning", login_mode_msg)))
 
-        if logger_config["PUBLIC"] is True:
-            public_mode_msg = "Log Server IS Public"
-            print_verbose(sender=__name__,
-                          message=public_mode_msg)
-            logger_config["POST_INIT"].append((log_internal, ("Warning", public_mode_msg)))
+    if logger_config["PUBLIC"] is True:
+        public_mode_msg = "Log Server IS Public"
+        print_verbose(sender=__name__,
+                      message=public_mode_msg)
+        logger_config["POST_INIT"].append((log_internal, ("Warning", public_mode_msg)))
 
-        logger_config["POST_INIT"].append((log_internal, ("Success", "Log Server Started successfully")))
-        print_verbose(sender=__name__, message="Server Initialization complete", underline=True)
-        server_init(is_pre_init=False)
+    logger_config["POST_INIT"].append((log_internal, ("Success", "Log Server Started successfully")))
+    print_verbose(sender=__name__, message="Server Initialization complete", underline=True)
+    server_init(is_pre_init=False)
+    config_context.pop()
 
     return app
 

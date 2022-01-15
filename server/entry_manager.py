@@ -79,7 +79,7 @@ def log_add(s_from="Unknown", severity="Information", comment="Not Specified", b
     :param body: A JSON body, but in reality, any string, or object, can be used here
     """
     global entry_list
-    if s_from != defaults["INTERNAL"]["SERVER_NAME"] and s_from not in servers_list:
+    if s_from not in defaults["INTERNAL"]["SERVER_NAME"] and s_from not in servers_list:
         ip = flask.request.remote_addr
         if add_server(s_from, None, None, ip) is True:  # New server, but unknown one
             log_internal(severity="Warning", comment=f"Server {servers_list[s_from][2]} from '{s_from}' was set",

@@ -175,6 +175,7 @@
 				if (isOffline) {
 					refresh();
 				}
+				document.getElementById("server-clock").innerHTML = "Last Update: " + json["last_update"]
 				var dif = json["entry_count"] - {{ data["total"] }};
 				if(dif != 0) {
 					if (auto_update) {

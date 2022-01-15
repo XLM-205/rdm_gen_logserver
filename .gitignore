@@ -6,3 +6,5 @@
 /server/templates/tester.html
 /server/server_services.py
 /private_resources/conf_res.py
+/.env
+/orchestrator_docker.egg-info/
