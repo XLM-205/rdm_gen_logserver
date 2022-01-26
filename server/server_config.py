@@ -38,7 +38,7 @@ defaults = {"SEVERITIES": {"success": ('#000000', '#00ee55'),   # Default severi
                          "DB_URL": None},   # Default Database URL
             "SERVICES": {"TIMEOUT": 10,     # How many seconds between each service request
                          "LOCKED": False},  # If True, the server cannot make another request
-            "INTERNAL": {"VERSION": "0.9.0",    # Server's Version
+            "INTERNAL": {"VERSION": "0.9.1",    # Server's Version
                          "ACCESS_POINT": "https://rdm-gen-logserver.herokuapp.com/",
                          "SERVER_NAME": "Internal",         # Server's name internally and on entries
                          "PRODUCT_NAME": "GPS LogServer"}}  # Server's 'pretty' product name

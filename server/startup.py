@@ -26,7 +26,6 @@ def main():
     port = int(os.environ.get("PORT", defaults["FALLBACK"]["PORT"]))
     app = create_app()
     app.run(host=host, port=port, use_reloader=False)
-    pass
 
 
 if __name__ == "__main__":

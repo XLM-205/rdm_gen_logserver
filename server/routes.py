@@ -193,7 +193,7 @@ def info():
 @auth.route("/login", methods=["GET"])
 def login():
     if logger_config["LOGIN"] is True:
-        return render_template("login.html")
+        return render_template("login.html"), 200
     else:
         return redirect(url_for("main.show_recent_entries"))
 
